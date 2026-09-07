@@ -215,6 +215,7 @@ table.data-table {
   width: 100%;
   font-size: 0.85rem;
   background: #fff;
+  white-space: nowrap;
 }
 table.data-table thead th {
   background: var(--navy-900);

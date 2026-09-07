@@ -92,6 +92,7 @@ export interface MasterImportSummary {
   vesselsSkippedAlreadyExists: number;
   evidenceCleanlyAssociated: number;
   evidenceUnassigned: number;
+  evidenceSkippedDuplicate: number;
   dataQualityIssuesRaised: number;
   pastEtdCount: number;
   readerWarnings: string[];
@@ -177,6 +178,7 @@ async function runImportTransaction(
     vesselsSkippedAlreadyExists: 0,
     evidenceCleanlyAssociated: 0,
     evidenceUnassigned: 0,
+    evidenceSkippedDuplicate: 0,
     dataQualityIssuesRaised: 0,
     pastEtdCount: 0,
     readerWarnings: parsed.warnings,
@@ -302,6 +304,21 @@ async function runImportTransaction(
         if (!asset) continue;
         const vesselId = rowNumberToVesselId.get(cleanAssoc.excelRow) ?? null;
 
+        // Dedup guard: if this exact image (by content, not filename or
+        // position) already exists as an active evidence record anywhere,
+        // don't create a second copy. This matters specifically for
+        // re-uploading the Master workbook — without this check, every
+        // re-import would silently pile up duplicate evidence rows for
+        // vessels whose screenshot hasn't changed, exactly the kind of
+        // uncontrolled growth the evidence review workflow exists to avoid.
+        const existingByHash = await tx.vesselEvidence.findFirst({
+          where: { contentHash: asset.contentHash, isActive: true },
+        });
+        if (existingByHash) {
+          summary.evidenceSkippedDuplicate += 1;
+          continue;
+        }
+
         await tx.vesselEvidence.create({
           data: {
             vesselId,
@@ -325,6 +342,14 @@ async function runImportTransaction(
       for (const pileupImg of pileup) {
         const asset = assetsByImageId.get(pileupImg.imageId);
         if (!asset) continue;
+
+        const existingByHash = await tx.vesselEvidence.findFirst({
+          where: { contentHash: asset.contentHash, isActive: true },
+        });
+        if (existingByHash) {
+          summary.evidenceSkippedDuplicate += 1;
+          continue;
+        }
 
         await tx.vesselEvidence.create({
           data: {

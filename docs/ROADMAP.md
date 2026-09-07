@@ -143,3 +143,17 @@ Planned: `[ BACKUP DATA ]` / `[ RESTORE BACKUP ]` producing a combined DB + stor
 ## Phase 11 — Hardening — NOT STARTED
 
 Planned: security review, broader error-handling coverage, performance pass, UX polish, production deployment execution (by the user, per `DEPLOYMENT.md`).
+
+## Master Import: evidence deduplication fix (prompted by the user asking "what if we re-upload the Master list?")
+
+Answering that question surfaced a real gap: the original Phase 3 implementation deduplicated **vessels** on re-import (matched by IMO/name, never overwritten) but did **not** deduplicate **evidence images** — every clean-anchored screenshot in a re-uploaded file would create a brand-new `VesselEvidence` row, even for a vessel whose evidence hadn't changed at all. Re-uploading the Master workbook repeatedly would have silently piled up duplicate evidence records over time.
+
+Fixed: before creating any evidence row (clean-associated or pileup), `masterImportService.ts` now checks whether an active `VesselEvidence` row with the same `contentHash` already exists anywhere in the database, and skips creating a duplicate if so. A new `evidenceSkippedDuplicate` counter was added to the import summary and surfaced in `public/import.html`.
+
+**Not yet tested live** — the original bug was caught by reasoning about the code, not by reproducing it against production. Next action, if the user wants to actually confirm this: re-upload the same Master workbook a second time and check that `evidenceSkippedDuplicate` matches the image count and no new duplicate evidence rows appear for existing vessels.
+
+**Documented behavior for Master re-upload, now complete:**
+- Vessels already in the database (by IMO if plausible, else exact normalized name) → skipped, permanent fields never overwritten.
+- Genuinely new vessels in the updated file → created normally.
+- Evidence images identical (by content hash) to an already-stored active evidence record → skipped, no duplicate created.
+- Evidence images that are new/different content → created as usual (clean-associated as `NEEDS_REVIEW`, pileup as `UNASSIGNED`), even for an already-existing vessel — e.g., if the Master file's screenshot for a vessel was updated to a newer IMO-website capture, the new image is correctly added rather than silently dropped.

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>US Calling Master Manager — Update from US Calling List</title>
 <link rel="stylesheet" href="/styles.css" />
+<script src="/date-format.js"></script>
 <style>
   #fileInfo { margin-top: 10px; font-size: 0.88rem; color: var(--text-600); }
   table.summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
@@ -191,10 +192,10 @@
           <tr>
             <td>${r.vesselNameRaw}${r.matchedVesselName && r.matchedVesselName !== r.vesselNameRaw ? ' (' + r.matchedVesselName + ')' : ''}</td>
             <td><span class="badge ${badgeClassFor(r.changeStatus)}">${r.changeStatus}</span></td>
-            <td>${r.previousEta ?? '—'}</td>
-            <td>${r.newEta ?? '—'}</td>
-            <td>${r.previousEtd ?? '—'}</td>
-            <td>${r.newEtd ?? '—'}</td>
+            <td>${dateCell(r.previousEta)}</td>
+            <td>${dateCell(r.newEta)}</td>
+            <td>${dateCell(r.previousEtd)}</td>
+            <td>${dateCell(r.newEtd)}</td>
             <td>${r.previousPort ?? '—'}</td>
             <td>${r.newPort ?? '—'}</td>
             <td class="warn-text">${r.dateWarnings.join('; ')}</td>
@@ -205,6 +206,11 @@
 
       previewCard.style.display = 'block';
       resultCard.style.display = 'none';
+    }
+
+    function dateCell(raw) {
+      const { text, warning } = formatDateForDisplay(raw);
+      return warning ? `<span style="color:var(--amber-600); font-weight:700;" title="Could not parse this date">⚠ ${text}</span>` : text;
     }
 
     function buildAddVesselUrl(row) {

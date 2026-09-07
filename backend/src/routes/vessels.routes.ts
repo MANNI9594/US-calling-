@@ -305,3 +305,104 @@ vesselsRouter.post('/restore', asyncHandler(async (req, res) => {
 
   res.json(result);
 }));
+
+const restoreAndUpdateSchema = z.object({
+  arrivalPort: z.string().trim().optional(),
+  etaRaw: z.string().trim().optional(),
+  etdRaw: z.string().trim().optional(),
+  voyageType: z.string().trim().optional(),
+  transactionType: z.string().trim().optional(),
+  sendTo: z.string().trim().optional(),
+});
+
+/**
+ * Restores a single archived vessel AND, if operational data is supplied,
+ * gives it a fresh current calling record in the same step — the
+ * "Archived Vessel Found → Restore & Update" convenience feature from the
+ * spec, reachable here from a manual search (see add-vessel.html) rather
+ * than only from a US Calling List upload. The prior current record (if
+ * any) is marked non-current, never deleted, consistent with every other
+ * operational update path in the app.
+ */
+vesselsRouter.post('/:id/restore-and-update', asyncHandler(async (req, res) => {
+  const parsed = restoreAndUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+  const input = parsed.data;
+
+  const vessel = await prisma.vessel.findUnique({ where: { id: req.params.id } });
+  if (!vessel) throw new AppError(404, 'Vessel not found');
+  if (vessel.status !== 'ARCHIVED') {
+    throw new AppError(400, `${vessel.vesselName} is not archived — nothing to restore`);
+  }
+
+  const hasOperationalData = Boolean(
+    input.arrivalPort || input.etaRaw || input.etdRaw || input.voyageType || input.transactionType || input.sendTo,
+  );
+
+  const dataQualityIssuesRaised = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.vessel.update({ where: { id: vessel.id }, data: { status: 'ACTIVE', restoredAt: new Date() } });
+
+    let issuesRaised = 0;
+
+    if (hasOperationalData) {
+      const previousCurrent = await tx.vesselCallingRecord.findFirst({ where: { vesselId: vessel.id, isCurrent: true } });
+      if (previousCurrent) {
+        await tx.vesselCallingRecord.update({ where: { id: previousCurrent.id }, data: { isCurrent: false } });
+      }
+
+      const callingRecord = await tx.vesselCallingRecord.create({
+        data: {
+          vesselId: vessel.id,
+          isCurrent: true,
+          arrivalPort: input.arrivalPort ?? null,
+          etaRaw: input.etaRaw ?? null,
+          etdRaw: input.etdRaw ?? null,
+          voyageType: input.voyageType ?? null,
+          transactionType: input.transactionType ?? null,
+          sendTo: input.sendTo ?? null,
+          source: 'RESTORE',
+        },
+      });
+
+      const { parsed: etaParsed } = await checkAndRecordDate(tx, {
+        raw: input.etaRaw ?? null,
+        fieldName: 'eta',
+        callingRecordId: callingRecord.id,
+        vesselId: vessel.id,
+      });
+      const { parsed: etdParsed } = await checkAndRecordDate(tx, {
+        raw: input.etdRaw ?? null,
+        fieldName: 'etd',
+        callingRecordId: callingRecord.id,
+        vesselId: vessel.id,
+      });
+      if (!etaParsed && input.etaRaw) issuesRaised += 1;
+      if (!etdParsed && input.etdRaw) issuesRaised += 1;
+
+      await checkEtdBeforeEta(tx, { etaParsed, etdParsed, callingRecordId: callingRecord.id, vesselId: vessel.id });
+      const isPast = await checkPastEtd(tx, { etdParsed, callingRecordId: callingRecord.id, vesselId: vessel.id });
+      if (isPast) issuesRaised += 1;
+
+      if (etaParsed || etdParsed) {
+        await tx.vesselCallingRecord.update({
+          where: { id: callingRecord.id },
+          data: { ...(etaParsed ? { etaParsed } : {}), ...(etdParsed ? { etdParsed } : {}) },
+        });
+      }
+    }
+
+    return issuesRaised;
+  });
+
+  await logAudit({
+    eventType: 'VESSEL_RESTORED',
+    vesselId: vessel.id,
+    actorUserId: req.userId,
+    summary: `${vessel.vesselName} restored to Active Master${hasOperationalData ? ' with fresh operational data' : ''}`,
+  });
+
+  res.json({ vessel: { ...vessel, status: 'ACTIVE' }, dataQualityIssuesRaised });
+}));

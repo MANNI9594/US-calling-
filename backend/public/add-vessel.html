@@ -7,6 +7,10 @@
 <link rel="stylesheet" href="/styles.css" />
 <style>
   .pending-op { background: var(--blue-50); color: #1e40af; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.85rem; margin-top: 14px; }
+  .search-result { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 8px; }
+  .search-result .info { font-size: 0.88rem; }
+  .search-result .info .name { font-weight: 700; }
+  #manualFormSection { display: none; }
 </style>
 </head>
 <body>
@@ -23,62 +27,81 @@
   <div class="page narrow">
     <div class="page-header">
       <div>
-        <h1>Add Vessel to Database</h1>
-        <p class="hint">This vessel didn't match anything in the database. Fill in what you know — nothing here is invented automatically.</p>
+        <h1>Add Vessel</h1>
+        <p class="hint">First check if this vessel already exists in your archive — no need to retype its history if so.</p>
       </div>
     </div>
 
     <div class="pending-op" id="pendingOpInfo" style="display:none;"></div>
 
-    <form id="addForm">
-      <label for="vesselName">Vessel Name *</label>
-      <input type="text" id="vesselName" required />
-
-      <fieldset>
-        <legend>Permanent Profile</legend>
-
-        <label for="imoNumber">IMO Number</label>
-        <input type="text" id="imoNumber" />
-
-        <label for="flag">Flag</label>
-        <input type="text" id="flag" />
-
-        <label for="vesselType">Vessel Type</label>
-        <input type="text" id="vesselType" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
-
-        <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
-        <input type="text" id="summerDeadweightOrTeu" />
-
-        <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
-        <input type="text" id="registeredOwnerPerCor" />
-
-        <label for="registeredOwnerPerCsr">Registered Owner (per CSR)</label>
-        <input type="text" id="registeredOwnerPerCsr" />
-
-        <label for="operatorNameInCofr">Operator's Name in COFR</label>
-        <input type="text" id="operatorNameInCofr" />
-
-        <label for="bridgeLetter">Bridge Letter</label>
-        <input type="text" id="bridgeLetter" />
-
-        <label for="builtLocation">Built Location</label>
-        <input type="text" id="builtLocation" />
-
-        <label for="serviceFeesApplicable">Service Fees Applicable</label>
-        <select id="serviceFeesApplicable">
-          <option value="UNKNOWN">Unknown</option>
-          <option value="YES">Yes</option>
-          <option value="NO">No</option>
-          <option value="NA">N/A</option>
-        </select>
-      </fieldset>
-
-      <div style="margin-top: 16px;">
-        <button type="submit" id="submitBtn" class="btn btn-accent">Create Vessel</button>
+    <div class="card">
+      <h3>Step 1 — Search the database</h3>
+      <div style="display:flex; gap: 8px;">
+        <input type="text" id="searchInput" placeholder="Type vessel name..." style="flex:1;" />
+        <button id="searchBtn" class="btn btn-primary">Search</button>
       </div>
-    </form>
+      <div id="searchResults"></div>
+      <div id="searchEmptyState" style="display:none; margin-top: 10px; font-size: 0.88rem; color: var(--text-600);">
+        No matches found. <a href="#" id="createNewLink">Create a new vessel profile instead →</a>
+      </div>
+    </div>
 
-    <div id="result" class="alert"></div>
+    <div id="restoreResult" class="alert"></div>
+
+    <div class="card" id="manualFormSection">
+      <h3>Step 2 — Create a new vessel profile</h3>
+      <p class="hint">Fill in what you know — nothing here is invented automatically.</p>
+
+      <form id="addForm">
+        <label for="vesselName">Vessel Name *</label>
+        <input type="text" id="vesselName" required />
+
+        <fieldset>
+          <legend>Permanent Profile</legend>
+
+          <label for="imoNumber">IMO Number</label>
+          <input type="text" id="imoNumber" />
+
+          <label for="flag">Flag</label>
+          <input type="text" id="flag" />
+
+          <label for="vesselType">Vessel Type</label>
+          <input type="text" id="vesselType" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
+
+          <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
+          <input type="text" id="summerDeadweightOrTeu" />
+
+          <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
+          <input type="text" id="registeredOwnerPerCor" />
+
+          <label for="registeredOwnerPerCsr">Registered Owner (per CSR)</label>
+          <input type="text" id="registeredOwnerPerCsr" />
+
+          <label for="operatorNameInCofr">Operator's Name in COFR</label>
+          <input type="text" id="operatorNameInCofr" />
+
+          <label for="bridgeLetter">Bridge Letter</label>
+          <input type="text" id="bridgeLetter" />
+
+          <label for="builtLocation">Built Location</label>
+          <input type="text" id="builtLocation" />
+
+          <label for="serviceFeesApplicable">Service Fees Applicable</label>
+          <select id="serviceFeesApplicable">
+            <option value="UNKNOWN">Unknown</option>
+            <option value="YES">Yes</option>
+            <option value="NO">No</option>
+            <option value="NA">N/A</option>
+          </select>
+        </fieldset>
+
+        <div style="margin-top: 16px;">
+          <button type="submit" id="submitBtn" class="btn btn-accent">Create Vessel</button>
+        </div>
+      </form>
+
+      <div id="result" class="alert"></div>
+    </div>
   </div>
 
   <script>
@@ -98,14 +121,102 @@
     });
 
     if (pendingOp.vesselName) {
+      document.getElementById('searchInput').value = pendingOp.vesselName;
       document.getElementById('vesselName').value = pendingOp.vesselName;
     }
     if (pendingOp.etaRaw || pendingOp.etdRaw || pendingOp.arrivalPort) {
       const info = document.getElementById('pendingOpInfo');
       info.style.display = 'block';
-      info.innerHTML = `<strong>Pending update from this row will be applied on creation:</strong><br>
+      info.innerHTML = `<strong>Pending update from this row will be applied once the vessel exists:</strong><br>
         Port: ${pendingOp.arrivalPort || '—'} | ETA: ${pendingOp.etaRaw || '—'} | ETD: ${pendingOp.etdRaw || '—'}`;
     }
+
+    async function runSearch() {
+      const query = document.getElementById('searchInput').value.trim();
+      const resultsDiv = document.getElementById('searchResults');
+      const emptyState = document.getElementById('searchEmptyState');
+      resultsDiv.innerHTML = '';
+      emptyState.style.display = 'none';
+
+      if (!query) return;
+
+      const res = await fetch(`/api/vessels?search=${encodeURIComponent(query)}`, { credentials: 'include' });
+      const data = await res.json();
+
+      if (!data.vessels || data.vessels.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+      }
+
+      resultsDiv.innerHTML = data.vessels.map((v) => {
+        const statusBadge = v.status === 'ARCHIVED'
+          ? '<span class="badge badge-amber">Archived</span>'
+          : '<span class="badge badge-green">Active</span>';
+        const action = v.status === 'ARCHIVED'
+          ? `<button class="btn btn-accent restore-btn" data-id="${v.id}" data-name="${v.vesselName}">Restore This Vessel</button>`
+          : `<a class="btn btn-secondary" href="/active-master.html">Already Active — View</a>`;
+        return `
+          <div class="search-result">
+            <div class="info"><span class="name">${v.vesselName}</span> ${statusBadge}${v.imoNumber ? ' — IMO ' + v.imoNumber : ''}</div>
+            ${action}
+          </div>
+        `;
+      }).join('') + `<p style="margin-top:10px;"><a href="#" id="createNewLinkAfterResults">None of these — create a new vessel profile instead →</a></p>`;
+
+      resultsDiv.querySelectorAll('.restore-btn').forEach((btn) => {
+        btn.addEventListener('click', () => restoreVessel(btn.dataset.id, btn.dataset.name));
+      });
+      const createLink = document.getElementById('createNewLinkAfterResults');
+      if (createLink) createLink.addEventListener('click', (e) => { e.preventDefault(); showManualForm(); });
+    }
+
+    async function restoreVessel(vesselId, vesselName) {
+      if (!confirm(`Restore ${vesselName} to the Active Master${pendingOp.etaRaw ? ' with the pending ETA/ETD/Port shown above' : ''}?`)) return;
+
+      const resultBox = document.getElementById('restoreResult');
+      resultBox.className = 'alert';
+
+      try {
+        const res = await fetch(`/api/vessels/${vesselId}/restore-and-update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            arrivalPort: pendingOp.arrivalPort || undefined,
+            etaRaw: pendingOp.etaRaw || undefined,
+            etdRaw: pendingOp.etdRaw || undefined,
+            voyageType: pendingOp.voyageType || undefined,
+            transactionType: pendingOp.transactionType || undefined,
+            sendTo: pendingOp.sendTo || undefined,
+          }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          resultBox.className = 'alert alert-success show';
+          resultBox.textContent = `${vesselName} restored to the Active Master with its complete existing profile${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged)` : ''}.`;
+          document.getElementById('searchResults').innerHTML = '';
+          document.getElementById('manualFormSection').style.display = 'none';
+        } else {
+          resultBox.className = 'alert alert-error show';
+          resultBox.textContent = data.error || 'Could not restore vessel.';
+        }
+      } catch {
+        resultBox.className = 'alert alert-error show';
+        resultBox.textContent = 'Could not reach the server.';
+      }
+    }
+
+    function showManualForm() {
+      document.getElementById('manualFormSection').style.display = 'block';
+      document.getElementById('manualFormSection').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.getElementById('searchBtn').addEventListener('click', runSearch);
+    document.getElementById('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
+    document.getElementById('createNewLink').addEventListener('click', (e) => { e.preventDefault(); showManualForm(); });
+
+    if (pendingOp.vesselName) runSearch();
 
     const form = document.getElementById('addForm');
     const resultBox = document.getElementById('result');

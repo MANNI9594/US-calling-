@@ -47,6 +47,7 @@
 
     <div class="ocr-controls">
       <button id="ocrRepairBtn" class="btn btn-accent">Run OCR Matching on Unassigned Evidence</button>
+      <button id="bulkConfirmBtn" class="btn btn-primary">Confirm All Clean-Anchor Evidence</button>
       <span id="ocrStatus"></span>
     </div>
 
@@ -257,6 +258,36 @@
 
         const s = data.summary;
         status.textContent = `Done: ${s.processed} processed, ${s.suggested} suggestions found, ${s.leftUnassigned} still unassigned, ${s.failed} failed.`;
+        await fetchCounts();
+        loadGrid();
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('bulkConfirmBtn').addEventListener('click', async () => {
+      if (!confirm('Confirm ALL clean-anchor (Master import, single-image-per-row) evidence that is currently Needs Review? OCR-suggested and pileup images are not affected — those still need individual review.')) {
+        return;
+      }
+      const btn = document.getElementById('bulkConfirmBtn');
+      const status = document.getElementById('ocrStatus');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/evidence/bulk-confirm-clean-anchors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.error || 'Bulk confirm failed.';
+          return;
+        }
+        status.textContent = `Confirmed ${data.confirmed} clean-anchor evidence record(s).`;
         await fetchCounts();
         loadGrid();
       } catch {

@@ -210,3 +210,17 @@ Built:
 Note: the team also has the option of simply sharing one login across all 3 people, since there is no per-user data partitioning — both approaches are supported; multi-account exists for teams that want per-person audit trail visibility (every vessel/evidence action already records `actorUserId`).
 
 **Not yet tested live** — next action: user redeploys and confirms the redesigned pages render correctly, and (if using multi-account) adds their teammates via `/manage-team.html`.
+
+## Real-world feedback batch (post-export live testing)
+
+Testing the live export surfaced one real design-vs-expectation gap and prompted three UX fixes:
+
+**Export images "missing" — clarified, not a bug, but a real friction point fixed anyway.** The export only ever includes `CONFIRMED` evidence, by design — the user had only manually confirmed 1 of 35+ evidence images from their Master import, so the export correctly (if unhelpfully) had almost no pictures. Fixed with `POST /api/evidence/bulk-confirm-clean-anchors`: bulk-confirms every `NEEDS_REVIEW` record whose association came from a clean, unambiguous single-image anchor in the original Master workbook (`associationMethod = ORIGINAL_ANCHOR`) — the highest-trust category. OCR-suggested and pileup-derived associations are deliberately untouched by this and still require individual review. Exposed as a "Confirm All Clean-Anchor Evidence" button on `evidence-review.html`.
+
+**Add Vessel now checks the archive first.** Previously, adding a vessel always meant filling in a blank form — even if that exact vessel already existed, just archived. `add-vessel.html` now searches both active and archived vessels first; an archived match offers "Restore This Vessel" (calling the new `POST /api/vessels/:id/restore-and-update` endpoint, which restores the vessel AND applies any pending ETA/ETD/Port from the triggering US Calling List row in one step) instead of requiring the user to retype a profile that already exists. A manual-entry form remains available for genuinely new vessels. An "+ Add Vessel" button was also added directly to `active-master.html` — previously the only way to reach vessel creation was via a US Calling List "New/Unknown" row.
+
+**Vessel detail is now a centered modal, not an inline panel at the bottom of the page.** Clicking a vessel name previously appended its detail panel below the entire (potentially long) table, requiring a scroll to see it. Now opens as a centered overlay card with an explicit close button, click-outside-to-close, and Escape-to-close.
+
+**Dates now display consistently as DD-MM-YYYY everywhere**, regardless of whether the underlying value came from the Master (`DD.MM.YYYY`) or a US Calling List upload (`DD-MM-YYYY`). Implemented as a pure client-side display helper (`public/date-format.js`) — the **stored raw value is never touched**, only what's rendered on screen. A value that doesn't match either known format (e.g. a real malformed date) is still shown as-is with a ⚠ warning marker, never silently guessed at, consistent with the server-side `parseOperationalDate` philosophy.
+
+**Not yet tested live** — all four of the above are new since the last live verification. Next actions: (1) confirm bulk-confirm actually makes evidence appear in a subsequent export, (2) confirm the archive-search-before-create flow works with a real archived vessel, (3) confirm the modal and date formatting render correctly in the browser.

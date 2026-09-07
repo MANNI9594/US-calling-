@@ -122,6 +122,44 @@ evidenceRouter.post('/:id/confirm', asyncHandler(async (req, res) => {
   res.json({ evidence: updated });
 }));
 
+/**
+ * Bulk-confirms every NEEDS_REVIEW evidence record whose association came
+ * from a clean, single-image anchor in the original Master workbook
+ * (associationMethod = ORIGINAL_ANCHOR) — the highest-trust category,
+ * since it means exactly one image was anchored to exactly one vessel's
+ * row with no ambiguity. This deliberately does NOT touch OCR-suggested
+ * (OCR_AUTO_MATCH) or manually-pending associations — those still require
+ * individual review. Added specifically because requiring one-by-one
+ * confirmation of 30+ high-confidence images before the Export feature
+ * would include any of them was real friction with no real safety benefit
+ * for this specific category.
+ */
+evidenceRouter.post('/bulk-confirm-clean-anchors', asyncHandler(async (req, res) => {
+  const candidates = await prisma.vesselEvidence.findMany({
+    where: { isActive: true, reviewStatus: 'NEEDS_REVIEW', associationMethod: 'ORIGINAL_ANCHOR', vesselId: { not: null } },
+    select: { id: true, vesselId: true },
+  });
+
+  if (candidates.length === 0) {
+    res.json({ confirmed: 0 });
+    return;
+  }
+
+  await prisma.vesselEvidence.updateMany({
+    where: { id: { in: candidates.map((c: { id: string }) => c.id) } },
+    data: { reviewStatus: 'CONFIRMED', reviewedByUserId: req.userId, reviewedAt: new Date() },
+  });
+
+  await logAudit({
+    eventType: 'EVIDENCE_ASSIGNED',
+    actorUserId: req.userId,
+    summary: `Bulk-confirmed ${candidates.length} clean-anchor evidence records`,
+    detail: { count: candidates.length, evidenceIds: candidates.map((c: { id: string }) => c.id) },
+  });
+
+  res.json({ confirmed: candidates.length });
+}));
+
 const rejectSchema = z.object({ reason: z.enum(['DUPLICATE', 'IRRELEVANT']) });
 evidenceRouter.post('/:id/reject', asyncHandler(async (req, res) => {
   const parsed = rejectSchema.safeParse(req.body);

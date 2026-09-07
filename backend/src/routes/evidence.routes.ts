@@ -6,6 +6,7 @@ import { storage } from '../services/storage';
 import { logAudit } from '../services/audit/auditService';
 import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { runEvidenceRepair } from '../services/evidenceRepair/evidenceRepairService';
 
 export const evidenceRouter = Router();
 evidenceRouter.use(requireAuth);
@@ -122,7 +123,6 @@ evidenceRouter.post('/:id/confirm', asyncHandler(async (req, res) => {
 }));
 
 const rejectSchema = z.object({ reason: z.enum(['DUPLICATE', 'IRRELEVANT']) });
-
 evidenceRouter.post('/:id/reject', asyncHandler(async (req, res) => {
   const parsed = rejectSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -154,4 +154,25 @@ evidenceRouter.post('/:id/reject', asyncHandler(async (req, res) => {
   });
 
   res.json({ evidence: updated });
+}));
+
+const ocrRepairSchema = z.object({ importBatchId: z.string().uuid().optional() });
+
+/**
+ * Triggers an OCR-based repair pass over currently-UNASSIGNED evidence
+ * (see docs/EVIDENCE_MAPPING.md "Phase 4 plan"). Runs synchronously — for a
+ * personal single-user tool with ~17-50 pileup images this completes in
+ * well under a minute, so a background job queue would be over-engineering
+ * for the actual scale involved. If evidence volume grows much larger,
+ * this is the point to revisit that tradeoff.
+ */
+evidenceRouter.post('/ocr-repair', asyncHandler(async (req, res) => {
+  const parsed = ocrRepairSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  const summary = await runEvidenceRepair(parsed.data.importBatchId);
+  res.json({ summary });
 }));

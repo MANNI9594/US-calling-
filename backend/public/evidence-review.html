@@ -30,6 +30,9 @@
   .empty { color: #94a3b8; padding: 40px; text-align: center; }
   #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; cursor: zoom-out; }
   #lightbox img { max-width: 90%; max-height: 90%; }
+  button#ocrRepairBtn { padding: 8px 16px; background: #0f172a; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+  button#ocrRepairBtn:disabled { background: #94a3b8; cursor: not-allowed; }
+  .confidence { font-size: 0.75rem; color: #555; margin-top: 4px; }
   .no-evidence-section { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 16px; }
   .no-evidence-section ul { columns: 3; font-size: 0.85rem; }
 </style>
@@ -43,6 +46,10 @@
   </p>
 
   <div class="tabs" id="tabs"></div>
+  <div style="margin-top: 12px;">
+    <button id="ocrRepairBtn">Run OCR Matching on Unassigned Evidence</button>
+    <span id="ocrStatus" style="margin-left: 10px; font-size: 0.85rem; color: #555;"></span>
+  </div>
   <div class="grid" id="grid"></div>
 
   <div class="no-evidence-section">
@@ -111,6 +118,12 @@
         ? `${ev.vessel.vesselName}${ev.vessel.imoNumber ? ' (IMO ' + ev.vessel.imoNumber + ')' : ''}`
         : null;
 
+      let confidenceLine = '';
+      if (ev.associationMethod === 'OCR_AUTO_MATCH' && ev.associationConfidence != null) {
+        const pct = Math.round(parseFloat(ev.associationConfidence) * 100);
+        confidenceLine = `<div class="confidence">OCR suggested \u2014 ${pct}% confidence</div>`;
+      }
+
       let actions = '';
       if (activeTab === 'NEEDS_REVIEW') {
         actions = `
@@ -137,6 +150,7 @@
           <div class="card-body">
             <span class="badge ${tabMeta.badgeClass}">${tabMeta.label}</span>
             <div class="vessel-name ${vesselLabel ? '' : 'none'}">${vesselLabel || 'No vessel assigned'}</div>
+            ${confidenceLine}
             ${actions}
           </div>
         </div>`;
@@ -221,6 +235,37 @@
       }
       div.innerHTML = `<ul>${noEvidence.map((v) => `<li>${v.vesselName}</li>`).join('')}</ul>`;
     }
+
+    document.getElementById('ocrRepairBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('ocrRepairBtn');
+      const status = document.getElementById('ocrStatus');
+      btn.disabled = true;
+      status.textContent = 'Running OCR on unassigned images \u2014 this can take a minute or two...';
+
+      try {
+        const res = await fetch('/api/evidence/ocr-repair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          status.textContent = data.error || 'OCR repair failed.';
+          return;
+        }
+
+        const s = data.summary;
+        status.textContent = `Done: ${s.processed} processed, ${s.suggested} suggestions found, ${s.leftUnassigned} still unassigned, ${s.failed} failed.`;
+        await fetchCounts();
+        loadGrid();
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     fetchCounts();
     loadGrid();

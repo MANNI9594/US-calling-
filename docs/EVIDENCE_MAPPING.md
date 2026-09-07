@@ -45,15 +45,17 @@ Master import (implemented in Phase 3, `backend/src/routes/import.routes.ts`, br
 - `POST /api/import/master-workbook/commit { storageKey, originalFilename }` — commits the previewed file inside one atomic transaction. This is where the clean/pileup grouping actually produces `VesselEvidence` rows — clean anchors get `ORIGINAL_ANCHOR`/`NEEDS_REVIEW` (only if the row maps to a vessel created in this run), pileup images always get `UNASSIGNED`.
 - `GET /api/import/batches` / `GET /api/import/batches/:id` — import history
 
-## Phase 4 plan: OCR-based repair (not yet implemented)
+## Phase 4: OCR-based repair ✅ IMPLEMENTED
 
-For the 17 piled-up images and the 9 unaccounted-for vessels:
+For the pileup images and unaccounted-for vessels:
 
-1. Run OCR (planned: Tesseract via a Node binding, or a cloud OCR API — decision deferred to Phase 4 so it can be evaluated against the real screenshots' actual text quality, not guessed now) against each evidence image, storing raw output in `ocrExtractedText`.
-2. Attempt to extract structured fields (`ocrExtractedFields`: owner name, operator, classification society, any IMO-like number visible) — the screenshots are lookup-result pages, so a registered owner name is often visible even when a ship name isn't.
-3. Compare extracted fields against the 43 `Vessel` records' `registeredOwnerPerCor` / `registeredOwnerPerCsr` / `operatorNameInCofr` / `imoNumber` fields. A match on owner *and* operator *and* (if visible) IMO is treated very differently from a fuzzy name-only match — score accordingly.
-4. Any match above a confidence threshold (to be set empirically against the real 17-image pileup once OCR output is in hand, not assumed in advance) becomes `OCR_AUTO_MATCH` / `NEEDS_REVIEW`. Anything below stays `UNASSIGNED`.
-5. Nothing in this step ever deletes an image, and nothing in this step ever sets `CONFIRMED`.
+1. OCR runs via `tesseract.js` (pure JS/WASM, no external API calls at request time — only the one-time trained-data download, pointed at a GitHub mirror rather than the library's default CDN). Raw output is stored in `ocrExtractedText`.
+2. `extractEvidenceFields()` pulls structured candidates out of that text — registered owner, ship manager, group beneficial owner, operator, and any parenthesized numeric codes (which may include an IMO number, since the screenshots are lookup-result pages). Stored in `ocrExtractedFields`.
+3. `scoreVesselMatch()` compares those candidates against every vessel's `registeredOwnerPerCor` / `registeredOwnerPerCsr` / `operatorNameInCofr` / `imoNumber`. An exact IMO match dominates the score; owner/operator similarity uses token overlap on normalized company names, tolerant of OCR noise and corporate-suffix variation ("INC" vs "LTD" vs none) without being fooled by one coincidentally shared word.
+4. Any match scoring ≥ 0.35 becomes `OCR_AUTO_MATCH` / `NEEDS_REVIEW`. Below that, the evidence stays `UNASSIGNED` — but its OCR text/fields are saved regardless, so nothing is recomputed on a future run and a human reviewer has something to go on even for an unmatched image.
+5. Nothing in this step ever deletes an image, and nothing in this step ever sets `CONFIRMED` — regardless of how high the score is.
+
+This was validated against real captured OCR output during development (see `docs/ROADMAP.md` Phase 4 for specifics) — a genuinely correct vessel scored >0.8, a genuinely unrelated one scored <0.15, and a case where OCR misread a single IMO digit still scored moderately on owner/operator alone rather than falling to zero. The threshold (0.35) is a single tunable constant, chosen from that real gap, not yet validated against the full real pileup at volume.
 
 ## Export rule (Phase 9, not yet implemented)
 

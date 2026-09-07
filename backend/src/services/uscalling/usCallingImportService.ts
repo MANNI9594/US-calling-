@@ -19,6 +19,9 @@ export interface CallingListPreviewRow {
   newEtd: string | null;
   previousPort: string | null;
   newPort: string | null;
+  voyageType: string | null;
+  transactionType: string | null;
+  sendTo: string | null;
   changeStatus: 'UPDATED' | 'UNCHANGED' | 'NEW' | 'ARCHIVED_FOUND' | 'AMBIGUOUS' | 'INVALID';
   dateWarnings: string[];
 }
@@ -129,6 +132,9 @@ export async function previewUsCallingListUpdate(fileBuffer: Buffer, originalFil
       newEtd: row.etdRaw,
       previousPort: previousRecord?.arrivalPort ?? null,
       newPort: row.arrivalPort,
+      voyageType: row.voyageType,
+      transactionType: row.transactionType,
+      sendTo: row.sendTo,
       changeStatus,
       dateWarnings,
     });

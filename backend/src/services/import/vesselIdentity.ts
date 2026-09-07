@@ -7,6 +7,11 @@ import { normalizeVesselName } from '../../utils/normalizeVesselName';
  * Pure function: takes raw values, returns a lookup key description; the
  * caller does the actual DB query. Kept separate from the DB so the
  * decision logic is testable without Prisma.
+ *
+ * Reused (not just by Master import) anywhere a vessel identity needs to be
+ * resolved — including manual vessel creation from a "New/Unknown" US
+ * Calling List row, so duplicate protection works the same way everywhere
+ * a vessel can come into existence.
  */
 export interface VesselIdentity {
   imoNumber: string | null;

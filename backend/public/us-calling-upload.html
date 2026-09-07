@@ -64,6 +64,11 @@
       Also restore any archived vessels found in this list back to the Active Master
     </label>
 
+    <p class="warn-text" style="margin-top: 8px;">
+      "Add to Database" opens in a new tab and creates the vessel immediately (independent of Apply Changes).
+      After adding one, re-run Preview to see it drop off the New/Unknown list before applying the rest.
+    </p>
+
     <div class="table-scroll">
       <table id="changeTable"></table>
     </div>
@@ -182,7 +187,7 @@
       `;
 
       changeTable.innerHTML = `
-        <tr><th>Vessel</th><th>Status</th><th>Old ETA</th><th>New ETA</th><th>Old ETD</th><th>New ETD</th><th>Old Port</th><th>New Port</th><th>Warnings</th></tr>
+        <tr><th>Vessel</th><th>Status</th><th>Old ETA</th><th>New ETA</th><th>Old ETD</th><th>New ETD</th><th>Old Port</th><th>New Port</th><th>Warnings</th><th></th></tr>
         ${p.rows.map((r) => `
           <tr>
             <td>${r.vesselNameRaw}${r.matchedVesselName && r.matchedVesselName !== r.vesselNameRaw ? ' (' + r.matchedVesselName + ')' : ''}</td>
@@ -194,12 +199,26 @@
             <td>${r.previousPort ?? '—'}</td>
             <td>${r.newPort ?? '—'}</td>
             <td class="warn-text">${r.dateWarnings.join('; ')}</td>
+            <td>${r.changeStatus === 'NEW' ? `<a href="${buildAddVesselUrl(r)}" target="_blank">Add to Database</a>` : ''}</td>
           </tr>
         `).join('')}
       `;
 
       previewCard.style.display = 'block';
       resultCard.style.display = 'none';
+    }
+
+    function buildAddVesselUrl(row) {
+      const params = new URLSearchParams({
+        vesselName: row.vesselNameRaw,
+        arrivalPort: row.newPort || '',
+        etaRaw: row.newEta || '',
+        etdRaw: row.newEtd || '',
+        voyageType: row.voyageType || '',
+        transactionType: row.transactionType || '',
+        sendTo: row.sendTo || '',
+      });
+      return `/add-vessel.html?${params.toString()}`;
     }
 
     cancelBtn.addEventListener('click', () => {

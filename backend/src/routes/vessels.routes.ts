@@ -406,3 +406,197 @@ vesselsRouter.post('/:id/restore-and-update', asyncHandler(async (req, res) => {
 
   res.json({ vessel: { ...vessel, status: 'ACTIVE' }, dataQualityIssuesRaised });
 }));
+
+/**
+ * Edits a vessel's PERMANENT profile fields (name, IMO, flag, type, etc.).
+ * Used by Active Master's inline "double-click to edit" cells. Deliberately
+ * separate from the operational-fields endpoint below — permanent fields
+ * live on Vessel, operational fields live on VesselCallingRecord, and
+ * mixing them into one endpoint would blur that distinction everywhere
+ * else in the app already depends on.
+ *
+ * Renaming a vessel or changing its IMO re-checks for a collision with a
+ * DIFFERENT existing vessel, using the same identity resolution as Master
+ * Import/Add Vessel — an edit must never silently create a duplicate
+ * identity clash.
+ */
+const editVesselSchema = z.object({
+  vesselName: z.string().trim().min(1).optional(),
+  imoNumber: z.string().trim().optional(),
+  flag: z.string().trim().optional(),
+  vesselType: z.string().trim().optional(),
+  summerDeadweightOrTeu: z.string().trim().optional(),
+  registeredOwnerPerCor: z.string().trim().optional(),
+  registeredOwnerPerCsr: z.string().trim().optional(),
+  operatorNameInCofr: z.string().trim().optional(),
+  bridgeLetter: z.string().trim().optional(),
+  builtLocation: z.string().trim().optional(),
+  serviceFeesApplicable: z.enum(['YES', 'NO', 'NA', 'UNKNOWN']).optional(),
+});
+
+vesselsRouter.patch('/:id', asyncHandler(async (req, res) => {
+  const parsed = editVesselSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+  const input = parsed.data;
+
+  const vessel = await prisma.vessel.findUnique({ where: { id: req.params.id } });
+  if (!vessel) throw new AppError(404, 'Vessel not found');
+
+  const data: Record<string, unknown> = {};
+  const changedFields: string[] = [];
+
+  if (input.vesselName !== undefined && input.vesselName !== vessel.vesselName) {
+    const identity = resolveVesselIdentity(input.vesselName, input.imoNumber ?? vessel.imoNumber);
+    const collision = await prisma.vessel.findFirst({
+      where: { vesselNameNormalized: identity.vesselNameNormalized, id: { not: vessel.id } },
+    });
+    if (collision) {
+      throw new AppError(409, `Another vessel already uses the name "${collision.vesselName}"`);
+    }
+    data.vesselName = input.vesselName;
+    data.vesselNameNormalized = identity.vesselNameNormalized;
+    changedFields.push('vesselName');
+  }
+
+  if (input.imoNumber !== undefined && input.imoNumber !== vessel.imoNumber) {
+    const identity = resolveVesselIdentity(input.vesselName ?? vessel.vesselName, input.imoNumber);
+    if (identity.imoNumber) {
+      const collision = await prisma.vessel.findFirst({
+        where: { imoNumber: identity.imoNumber, id: { not: vessel.id } },
+      });
+      if (collision) {
+        throw new AppError(409, `IMO ${identity.imoNumber} is already used by ${collision.vesselName}`);
+      }
+    }
+    data.imoNumber = identity.imoNumber;
+    data.imoNumberPlausible = identity.imoPlausible;
+    changedFields.push('imoNumber');
+  }
+
+  (['flag', 'vesselType', 'summerDeadweightOrTeu', 'registeredOwnerPerCor', 'registeredOwnerPerCsr', 'operatorNameInCofr', 'bridgeLetter', 'builtLocation', 'serviceFeesApplicable'] as const).forEach((field) => {
+    if (input[field] !== undefined && input[field] !== (vessel as unknown as Record<string, unknown>)[field]) {
+      data[field] = input[field];
+      changedFields.push(field);
+    }
+  });
+
+  if (changedFields.length === 0) {
+    res.json({ vessel });
+    return;
+  }
+
+  const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const result = await tx.vessel.update({ where: { id: vessel.id }, data });
+
+    // If the IMO was just corrected to a plausible value, resolve any
+    // open "implausible IMO" flag rather than leaving a stale warning
+    // around after the user has already fixed it.
+    if (data.imoNumberPlausible === true) {
+      await tx.dataQualityIssue.updateMany({
+        where: { vesselId: vessel.id, issueType: 'IMPLAUSIBLE_IMO', status: 'OPEN' },
+        data: { status: 'RESOLVED', resolvedAt: new Date() },
+      });
+    }
+
+    return result;
+  });
+
+  await logAudit({
+    eventType: 'MANUAL_EDIT',
+    vesselId: vessel.id,
+    actorUserId: req.userId,
+    summary: `${vessel.vesselName}: edited ${changedFields.join(', ')}`,
+    detail: { changedFields, newValues: data as Prisma.InputJsonValue },
+  });
+
+  res.json({ vessel: updated });
+}));
+
+/**
+ * Edits a vessel's CURRENT operational fields (Port/ETA/ETD) IN PLACE —
+ * a deliberate departure from the "always version, mark old non-current"
+ * pattern used by Master Import and US Calling List processing. Those
+ * flows represent a new data FEED arriving; this endpoint represents a
+ * human correcting a value that's already there. Versioning every small
+ * inline edit would explode calling-record history for no real benefit —
+ * the audit log already records what changed and when.
+ *
+ * Re-runs the same date-quality checks used everywhere else (malformed
+ * date, ETD-before-ETA, past-ETD) against the corrected values, and
+ * resolves any open flag that the edit fixes — an edit that corrects a
+ * malformed date shouldn't leave a stale "invalid date" warning behind.
+ */
+const editOperationalSchema = z.object({
+  arrivalPort: z.string().trim().optional(),
+  etaRaw: z.string().trim().optional(),
+  etdRaw: z.string().trim().optional(),
+  ballastOrLoaded: z.string().trim().optional(),
+});
+
+vesselsRouter.patch('/:id/operational', asyncHandler(async (req, res) => {
+  const parsed = editOperationalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+  const input = parsed.data;
+
+  const vessel = await prisma.vessel.findUnique({ where: { id: req.params.id } });
+  if (!vessel) throw new AppError(404, 'Vessel not found');
+
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    let record = await tx.vesselCallingRecord.findFirst({ where: { vesselId: vessel.id, isCurrent: true } });
+
+    const mergedEta = input.etaRaw !== undefined ? input.etaRaw : record?.etaRaw ?? null;
+    const mergedEtd = input.etdRaw !== undefined ? input.etdRaw : record?.etdRaw ?? null;
+    const mergedPort = input.arrivalPort !== undefined ? input.arrivalPort : record?.arrivalPort ?? null;
+    const mergedBallast = input.ballastOrLoaded !== undefined ? input.ballastOrLoaded : record?.ballastOrLoaded ?? null;
+
+    const eventType = input.etaRaw !== undefined ? 'ETA_CHANGED' : input.etdRaw !== undefined ? 'ETD_CHANGED' : input.arrivalPort !== undefined ? 'PORT_CHANGED' : 'MANUAL_EDIT';
+
+    if (!record) {
+      record = await tx.vesselCallingRecord.create({
+        data: { vesselId: vessel.id, isCurrent: true, arrivalPort: mergedPort, etaRaw: mergedEta, etdRaw: mergedEtd, ballastOrLoaded: mergedBallast, source: 'MANUAL_EDIT' },
+      });
+    } else {
+      record = await tx.vesselCallingRecord.update({
+        where: { id: record.id },
+        data: { arrivalPort: mergedPort, etaRaw: mergedEta, etdRaw: mergedEtd, ballastOrLoaded: mergedBallast },
+      });
+    }
+
+    // Clear stale flags for fields being re-evaluated, then re-run the
+    // same checks fresh — simplest way to guarantee no orphaned issue
+    // survives a correction.
+    await tx.dataQualityIssue.updateMany({
+      where: { callingRecordId: record.id, status: 'OPEN', issueType: { in: ['INVALID_DATE_FORMAT', 'ETD_BEFORE_ETA', 'PAST_ETD'] } },
+      data: { status: 'RESOLVED', resolvedAt: new Date() },
+    });
+
+    const { parsed: etaParsed } = await checkAndRecordDate(tx, { raw: mergedEta, fieldName: 'eta', callingRecordId: record.id, vesselId: vessel.id });
+    const { parsed: etdParsed } = await checkAndRecordDate(tx, { raw: mergedEtd, fieldName: 'etd', callingRecordId: record.id, vesselId: vessel.id });
+    await checkEtdBeforeEta(tx, { etaParsed, etdParsed, callingRecordId: record.id, vesselId: vessel.id });
+    await checkPastEtd(tx, { etdParsed, callingRecordId: record.id, vesselId: vessel.id });
+
+    if (etaParsed || etdParsed) {
+      record = await tx.vesselCallingRecord.update({
+        where: { id: record.id },
+        data: { ...(etaParsed ? { etaParsed } : { etaParsed: null }), ...(etdParsed ? { etdParsed } : { etdParsed: null }) },
+      });
+    }
+
+    return { record, eventType };
+  });
+
+  await logAudit({
+    eventType: result.eventType as 'ETA_CHANGED' | 'ETD_CHANGED' | 'PORT_CHANGED' | 'MANUAL_EDIT',
+    vesselId: vessel.id,
+    actorUserId: req.userId,
+    summary: `${vessel.vesselName}: manually edited operational data`,
+  });
+
+  res.json({ callingRecord: result.record });
+}));

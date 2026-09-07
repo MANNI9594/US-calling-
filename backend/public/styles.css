@@ -61,6 +61,7 @@ body {
 }
 .page.narrow { max-width: 620px; }
 .page.medium { max-width: 900px; }
+.page.full { max-width: 1800px; }
 
 /* --- Top navigation bar --- */
 .topbar {

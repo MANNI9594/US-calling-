@@ -14,6 +14,21 @@
   .date-warning { color: var(--amber-600); font-weight: 700; }
   .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
+  #editModeBtn.on { background: var(--green-600); }
+  #editModeBtn.on:hover { background: #15803d; }
+  .edit-hint { font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 12px; border-radius: var(--radius-sm); display: none; }
+  .edit-hint.show { display: inline-block; }
+
+  .scroll-box { max-height: 68vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 14px; box-shadow: var(--shadow-sm); }
+  .scroll-box table.data-table thead th { top: 0; }
+
+  td.editable { cursor: pointer; }
+  td.editable:hover { background: var(--blue-50); outline: 1px dashed var(--blue-100); }
+  td.editing input, td.editing select { width: 100%; font-size: 0.85rem; padding: 4px 6px; border: 1px solid var(--blue-600); border-radius: 4px; }
+
+  .ev-thumb { width: 70px; height: 40px; object-fit: contain; background: var(--bg-subtle); border-radius: 4px; cursor: pointer; display: block; }
+  .ev-thumb-empty { width: 70px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-400); font-size: 0.7rem; background: var(--bg-subtle); border-radius: 4px; }
+
   #modalOverlay {
     display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.55);
     z-index: 200; align-items: center; justify-content: center; padding: 24px;
@@ -32,6 +47,9 @@
   #modalCard dl { display: grid; grid-template-columns: 200px 1fr; gap: 7px 14px; font-size: 0.87rem; margin: 14px 0 0; }
   #modalCard dt { font-weight: 600; color: var(--text-600); }
   #modalCard dd { margin: 0; }
+
+  #lightbox { display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.9); z-index: 250; align-items: center; justify-content: center; cursor: zoom-out; }
+  #lightbox img { max-width: 90%; max-height: 90%; border-radius: var(--radius); }
 </style>
 </head>
 <body>
@@ -45,14 +63,15 @@
     <a href="/logout.html">Logout</a>
   </nav>
 
-  <div class="page">
+  <div class="page full">
     <div class="page-header">
       <div>
         <h1>Active Master</h1>
-        <p class="hint">Sorted by ETA (earliest first). Search covers vessel name and IMO number. Dates shown as DD-MM-YYYY.</p>
+        <p class="hint">Sorted by ETA (earliest first). Dates shown as DD-MM-YYYY. Scroll horizontally/vertically for the full Master sheet.</p>
       </div>
       <div class="header-actions">
         <a href="/add-vessel.html" class="btn btn-primary">+ Add Vessel</a>
+        <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
         <a href="/api/export/master-xlsx" class="btn btn-accent">⬇ Download Updated Master XLSX</a>
       </div>
     </div>
@@ -65,11 +84,12 @@
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
       <button id="actionBtn" class="btn btn-danger" disabled>Remove Selected</button>
       <span class="selection-count" id="selectionCount"></span>
+      <span class="edit-hint" id="editHint">Double-click any cell (except Vessel Name and Evidence) to edit it. Press Enter or click away to save.</span>
     </div>
 
     <div id="message" class="alert"></div>
 
-    <div class="table-wrap">
+    <div class="scroll-box">
       <table class="data-table" id="masterTable"></table>
     </div>
   </div>
@@ -81,14 +101,33 @@
     </div>
   </div>
 
+  <div id="lightbox"><img id="lightboxImg" src="" /></div>
+
   <script>
     let activeTab = 'ACTIVE';
     let vessels = [];
     let selected = new Set();
     let searchTimer = null;
+    let editMode = false;
+
+    const FIELD_ENDPOINT = {
+      imoNumber: 'vessel', flag: 'vessel', vesselType: 'vessel', summerDeadweightOrTeu: 'vessel',
+      registeredOwnerPerCor: 'vessel', registeredOwnerPerCsr: 'vessel', operatorNameInCofr: 'vessel',
+      bridgeLetter: 'vessel', builtLocation: 'vessel', serviceFeesApplicable: 'vessel',
+      ballastOrLoaded: 'operational', arrivalPort: 'operational', etaRaw: 'operational', etdRaw: 'operational',
+    };
 
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
       if (!res.ok) window.location.href = '/login.html';
+    });
+
+    document.getElementById('editModeBtn').addEventListener('click', () => {
+      editMode = !editMode;
+      const btn = document.getElementById('editModeBtn');
+      btn.textContent = `✎ Edit Mode: ${editMode ? 'On' : 'Off'}`;
+      btn.classList.toggle('on', editMode);
+      document.getElementById('editHint').classList.toggle('show', editMode);
+      renderTable();
     });
 
     function renderTabs() {
@@ -142,6 +181,13 @@
       const { text, warning } = formatDateForDisplay(raw);
       return warning ? `<span class="date-warning" title="Could not parse this date">⚠ ${text}</span>` : text;
     }
+    function esc(v) {
+      return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
+    }
+
+    function editableTd(field, rawValue, displayValue) {
+      return `<td class="editable" data-field="${field}" data-value="${esc(rawValue)}">${displayValue ?? '—'}</td>`;
+    }
 
     function renderTable() {
       const table = document.getElementById('masterTable');
@@ -150,21 +196,35 @@
         return;
       }
 
-      const rows = vessels.map((v) => {
+      const rows = vessels.map((v, idx) => {
         const cr = (v.callingRecords || [])[0] || {};
         const checked = selected.has(v.id) ? 'checked' : '';
         const past = hasPastEtd(v);
+        const bestEvidence = (v.evidence || []).find((e) => e.reviewStatus === 'CONFIRMED') || (v.evidence || [])[0];
+        const evidenceCell = bestEvidence
+          ? `<img class="ev-thumb" src="/api/evidence/${bestEvidence.id}/image" data-full="/api/evidence/${bestEvidence.id}/image" loading="lazy" />`
+          : `<div class="ev-thumb-empty">No image</div>`;
+
         return `
-          <tr class="${past ? 'flagged' : ''}">
+          <tr class="${past ? 'flagged' : ''}" data-vessel-id="${v.id}">
             <td><input type="checkbox" class="rowCheck" data-id="${v.id}" ${checked} /></td>
+            <td>${idx + 1}</td>
             <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${past ? '<span class="badge badge-red">Past ETD</span>' : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber">${openDqCount(v)} flag(s)</span>` : ''}</td>
-            <td>${v.imoNumber ?? '—'}</td>
-            <td>${v.flag ?? '—'}</td>
-            <td>${v.vesselType ?? '—'}</td>
-            <td>${cr.arrivalPort ?? '—'}</td>
-            <td>${dateCell(cr.etaRaw)}</td>
-            <td>${dateCell(cr.etdRaw)}</td>
-            <td><span class="badge badge-outline">${(v.evidence || []).length}</span></td>
+            ${editableTd('imoNumber', v.imoNumber, v.imoNumber ?? '—')}
+            ${editableTd('flag', v.flag, v.flag ?? '—')}
+            ${editableTd('vesselType', v.vesselType, v.vesselType ?? '—')}
+            ${editableTd('summerDeadweightOrTeu', v.summerDeadweightOrTeu, v.summerDeadweightOrTeu ?? '—')}
+            ${editableTd('ballastOrLoaded', cr.ballastOrLoaded, cr.ballastOrLoaded ?? '—')}
+            ${editableTd('registeredOwnerPerCor', v.registeredOwnerPerCor, v.registeredOwnerPerCor ?? '—')}
+            ${editableTd('registeredOwnerPerCsr', v.registeredOwnerPerCsr, v.registeredOwnerPerCsr ?? '—')}
+            ${editableTd('operatorNameInCofr', v.operatorNameInCofr, v.operatorNameInCofr ?? '—')}
+            ${editableTd('bridgeLetter', v.bridgeLetter, v.bridgeLetter ?? '—')}
+            <td>${evidenceCell}</td>
+            ${editableTd('builtLocation', v.builtLocation, v.builtLocation ?? '—')}
+            ${editableTd('serviceFeesApplicable', v.serviceFeesApplicable, v.serviceFeesApplicable ?? '—')}
+            ${editableTd('arrivalPort', cr.arrivalPort, cr.arrivalPort ?? '—')}
+            ${editableTd('etaRaw', cr.etaRaw, dateCell(cr.etaRaw))}
+            ${editableTd('etdRaw', cr.etdRaw, dateCell(cr.etdRaw))}
           </tr>
         `;
       }).join('');
@@ -173,14 +233,23 @@
         <thead>
           <tr>
             <th style="width:32px;"></th>
-            <th>Vessel</th>
-            <th>IMO</th>
+            <th>Sr.</th>
+            <th>Vessel Name</th>
+            <th>IMO No</th>
             <th>Flag</th>
-            <th>Type</th>
-            <th>Port</th>
+            <th>Vessel Type</th>
+            <th>Summer DWT/TEU</th>
+            <th>Ballast/Loaded</th>
+            <th>Reg. Owner (CoR)</th>
+            <th>Reg. Owner (CSR)</th>
+            <th>Operator (COFR)</th>
+            <th>Bridge Letter</th>
+            <th>Evidence</th>
+            <th>Built Location</th>
+            <th>Service Fees</th>
+            <th>Arrival Port</th>
             <th>ETA</th>
             <th>ETD</th>
-            <th>Evidence</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -195,6 +264,89 @@
       });
       table.querySelectorAll('.vessel-link').forEach((el) => {
         el.addEventListener('click', () => showDetail(el.dataset.id));
+      });
+      table.querySelectorAll('.ev-thumb').forEach((img) => {
+        img.addEventListener('click', () => {
+          document.getElementById('lightboxImg').src = img.dataset.full;
+          document.getElementById('lightbox').style.display = 'flex';
+        });
+      });
+
+      if (editMode) {
+        table.querySelectorAll('td.editable').forEach((td) => {
+          td.addEventListener('dblclick', () => startEdit(td));
+        });
+      }
+    }
+
+    document.getElementById('lightbox').addEventListener('click', () => {
+      document.getElementById('lightbox').style.display = 'none';
+    });
+
+    function startEdit(td) {
+      if (td.classList.contains('editing')) return;
+      const field = td.dataset.field;
+      const currentValue = td.dataset.value || '';
+      const row = td.closest('tr');
+      const vesselId = row.dataset.vesselId;
+
+      td.classList.add('editing');
+      const originalHtml = td.innerHTML;
+
+      let inputHtml;
+      if (field === 'serviceFeesApplicable') {
+        const options = ['UNKNOWN', 'YES', 'NO', 'NA'];
+        inputHtml = `<select>${options.map((o) => `<option value="${o}" ${o === currentValue ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+      } else {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" />`;
+      }
+      td.innerHTML = inputHtml;
+      const inputEl = td.querySelector('input, select');
+      inputEl.focus();
+      if (inputEl.select) inputEl.select();
+
+      let saved = false;
+      const save = async () => {
+        if (saved) return;
+        saved = true;
+        const newValue = inputEl.value;
+
+        if (newValue === currentValue) {
+          td.classList.remove('editing');
+          td.innerHTML = originalHtml;
+          return;
+        }
+
+        const endpoint = FIELD_ENDPOINT[field] === 'operational'
+          ? `/api/vessels/${vesselId}/operational`
+          : `/api/vessels/${vesselId}`;
+
+        try {
+          const res = await fetch(endpoint, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ [field]: newValue }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error || 'Could not save change.');
+            td.classList.remove('editing');
+            td.innerHTML = originalHtml;
+            return;
+          }
+          await loadVessels();
+        } catch {
+          alert('Could not reach the server.');
+          td.classList.remove('editing');
+          td.innerHTML = originalHtml;
+        }
+      };
+
+      inputEl.addEventListener('blur', save);
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); inputEl.blur(); }
+        if (e.key === 'Escape') { saved = true; td.classList.remove('editing'); td.innerHTML = originalHtml; }
       });
     }
 

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Evidence Review</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 960px; margin: 30px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
+  .tabs { display: flex; gap: 4px; margin-top: 20px; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; }
+  .tab { padding: 8px 16px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 0.9rem; color: #555; }
+  .tab.active { background: #0f172a; color: white; font-weight: 600; }
+  .tab .count { opacity: 0.8; margin-left: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 20px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: white; }
+  .card img { width: 100%; height: 120px; object-fit: contain; background: #f8fafc; cursor: zoom-in; display: block; }
+  .card-body { padding: 10px; font-size: 0.85rem; }
+  .vessel-name { font-weight: 600; margin-bottom: 4px; }
+  .vessel-name.none { color: #94a3b8; font-style: italic; font-weight: 400; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-bottom: 6px; }
+  .badge.needs { background: #fef3c7; color: #92400e; }
+  .badge.unassigned { background: #e0e7ff; color: #3730a3; }
+  .badge.confirmed { background: #dcfce7; color: #166534; }
+  .badge.rejected { background: #fee2e2; color: #991b1b; }
+  .actions { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+  .actions button { flex: 1; min-width: 60px; padding: 6px 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #cbd5e1; background: white; cursor: pointer; }
+  .actions button.confirm { background: #166534; color: white; border: none; }
+  .actions button.reject { background: white; color: #991b1b; }
+  .empty { color: #94a3b8; padding: 40px; text-align: center; }
+  #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; cursor: zoom-out; }
+  #lightbox img { max-width: 90%; max-height: 90%; }
+  .no-evidence-section { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 16px; }
+  .no-evidence-section ul { columns: 3; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>Evidence Review</h1>
+  <p class="hint">
+    Every screenshot from the Master workbook, sorted by review status. Nothing here was
+    auto-confirmed — even a "cleanly anchored" image from the original file needs your
+    confirmation before it counts as verified.
+  </p>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="no-evidence-section">
+    <h3>Vessels with no evidence at all</h3>
+    <div id="noEvidenceList">Loading…</div>
+  </div>
+
+  <div id="lightbox"><img id="lightboxImg" src="" /></div>
+
+  <script>
+    const TABS = [
+      { key: 'NEEDS_REVIEW', label: 'Needs Review', badgeClass: 'needs' },
+      { key: 'UNASSIGNED', label: 'Unassigned', badgeClass: 'unassigned' },
+      { key: 'CONFIRMED', label: 'Confirmed', badgeClass: 'confirmed' },
+      { key: 'REJECTED_DUPLICATE', label: 'Rejected (Duplicate)', badgeClass: 'rejected' },
+      { key: 'REJECTED_IRRELEVANT', label: 'Rejected (Irrelevant)', badgeClass: 'rejected' },
+    ];
+    let activeTab = 'NEEDS_REVIEW';
+    let counts = {};
+
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    async function fetchCounts() {
+      for (const tab of TABS) {
+        const res = await fetch(`/api/evidence?status=${tab.key}`, { credentials: 'include' });
+        const data = await res.json();
+        counts[tab.key] = data.count ?? 0;
+      }
+      renderTabs();
+    }
+
+    function renderTabs() {
+      const tabsDiv = document.getElementById('tabs');
+      tabsDiv.innerHTML = TABS.map(
+        (t) => `<div class="tab ${t.key === activeTab ? 'active' : ''}" data-key="${t.key}">${t.label}<span class="count">(${counts[t.key] ?? '…'})</span></div>`
+      ).join('');
+      tabsDiv.querySelectorAll('.tab').forEach((el) => {
+        el.addEventListener('click', () => {
+          activeTab = el.dataset.key;
+          renderTabs();
+          loadGrid();
+        });
+      });
+    }
+
+    async function loadGrid() {
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '<div class="empty">Loading…</div>';
+      const res = await fetch(`/api/evidence?status=${activeTab}`, { credentials: 'include' });
+      const data = await res.json();
+
+      if (!data.evidence || data.evidence.length === 0) {
+        grid.innerHTML = '<div class="empty">Nothing here.</div>';
+        return;
+      }
+
+      const tabMeta = TABS.find((t) => t.key === activeTab);
+      grid.innerHTML = data.evidence.map((ev) => renderCard(ev, tabMeta)).join('');
+      wireCardActions();
+    }
+
+    function renderCard(ev, tabMeta) {
+      const vesselLabel = ev.vessel
+        ? `${ev.vessel.vesselName}${ev.vessel.imoNumber ? ' (IMO ' + ev.vessel.imoNumber + ')' : ''}`
+        : null;
+
+      let actions = '';
+      if (activeTab === 'NEEDS_REVIEW') {
+        actions = `
+          <div class="actions">
+            <button class="confirm" data-action="confirm" data-id="${ev.id}">Confirm</button>
+            <button data-action="reassign" data-id="${ev.id}">Reassign</button>
+            <button class="reject" data-action="reject-duplicate" data-id="${ev.id}">Duplicate</button>
+            <button class="reject" data-action="reject-irrelevant" data-id="${ev.id}">Irrelevant</button>
+          </div>`;
+      } else if (activeTab === 'UNASSIGNED') {
+        actions = `
+          <div class="actions">
+            <button data-action="reassign" data-id="${ev.id}">Assign to vessel</button>
+            <button class="reject" data-action="reject-duplicate" data-id="${ev.id}">Duplicate</button>
+            <button class="reject" data-action="reject-irrelevant" data-id="${ev.id}">Irrelevant</button>
+          </div>`;
+      } else if (activeTab === 'CONFIRMED') {
+        actions = `<div class="actions"><button data-action="reassign" data-id="${ev.id}">Reassign</button></div>`;
+      }
+
+      return `
+        <div class="card">
+          <img src="/api/evidence/${ev.id}/image" loading="lazy" data-full="/api/evidence/${ev.id}/image" />
+          <div class="card-body">
+            <span class="badge ${tabMeta.badgeClass}">${tabMeta.label}</span>
+            <div class="vessel-name ${vesselLabel ? '' : 'none'}">${vesselLabel || 'No vessel assigned'}</div>
+            ${actions}
+          </div>
+        </div>`;
+    }
+
+    function wireCardActions() {
+      document.querySelectorAll('.card img').forEach((img) => {
+        img.addEventListener('click', () => {
+          document.getElementById('lightboxImg').src = img.dataset.full;
+          document.getElementById('lightbox').style.display = 'flex';
+        });
+      });
+      document.getElementById('lightbox').addEventListener('click', () => {
+        document.getElementById('lightbox').style.display = 'none';
+      });
+
+      document.querySelectorAll('[data-action="confirm"]').forEach((btn) => {
+        btn.addEventListener('click', () => doAction(btn.dataset.id, 'confirm'));
+      });
+      document.querySelectorAll('[data-action="reject-duplicate"]').forEach((btn) => {
+        btn.addEventListener('click', () => doAction(btn.dataset.id, 'reject', { reason: 'DUPLICATE' }));
+      });
+      document.querySelectorAll('[data-action="reject-irrelevant"]').forEach((btn) => {
+        btn.addEventListener('click', () => doAction(btn.dataset.id, 'reject', { reason: 'IRRELEVANT' }));
+      });
+      document.querySelectorAll('[data-action="reassign"]').forEach((btn) => {
+        btn.addEventListener('click', () => reassignFlow(btn.dataset.id));
+      });
+    }
+
+    async function doAction(evidenceId, action, body) {
+      const res = await fetch(`/api/evidence/${evidenceId}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Action failed.');
+        return;
+      }
+      await fetchCounts();
+      loadGrid();
+    }
+
+    async function reassignFlow(evidenceId) {
+      const query = prompt('Type part of the vessel name to search for:');
+      if (!query) return;
+
+      const res = await fetch(`/api/vessels?search=${encodeURIComponent(query)}`, { credentials: 'include' });
+      const data = await res.json();
+
+      if (!data.vessels || data.vessels.length === 0) {
+        alert('No vessels matched that search.');
+        return;
+      }
+
+      const listText = data.vessels.map((v, i) => `${i + 1}. ${v.vesselName}${v.imoNumber ? ' (IMO ' + v.imoNumber + ')' : ''}`).join('\n');
+      const choice = prompt(`Matches:\n${listText}\n\nEnter the number of the vessel to assign this evidence to:`);
+      const idx = parseInt(choice, 10) - 1;
+      if (isNaN(idx) || !data.vessels[idx]) {
+        alert('No valid selection made.');
+        return;
+      }
+
+      await doAction(evidenceId, 'assign', { vesselId: data.vessels[idx].id });
+    }
+
+    async function loadVesselsWithNoEvidence() {
+      const res = await fetch('/api/vessels', { credentials: 'include' });
+      const data = await res.json();
+      const div = document.getElementById('noEvidenceList');
+      if (!data.vessels) {
+        div.textContent = 'Could not load vessels.';
+        return;
+      }
+      const noEvidence = data.vessels.filter((v) => !v.evidence || v.evidence.length === 0);
+      if (noEvidence.length === 0) {
+        div.textContent = 'Every vessel has at least one evidence record.';
+        return;
+      }
+      div.innerHTML = `<ul>${noEvidence.map((v) => `<li>${v.vesselName}</li>`).join('')}</ul>`;
+    }
+
+    fetchCounts();
+    loadGrid();
+    loadVesselsWithNoEvidence();
+  </script>
+</body>
+</html>

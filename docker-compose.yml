@@ -1,0 +1,62 @@
+# ============================================================================
+# Local development stack.
+#
+#   docker compose up -d db          # just the database
+#   docker compose up                # database + backend API
+#
+# The frontend (Phase 6+) will run separately via its own dev server
+# (e.g. `npm run dev` with Vite) pointed at CORS_ORIGIN / the API port below.
+# ============================================================================
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ucmm
+      POSTGRES_PASSWORD: ucmm
+      POSTGRES_DB: ucmm
+    ports:
+      - "5432:5432"
+    volumes:
+      - ucmm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ucmm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://ucmm:ucmm@db:5432/ucmm
+      SESSION_SECRET: dev-only-secret-do-not-use-in-production-aaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      COOKIE_SECURE: "false"
+      CORS_ORIGIN: http://localhost:5173
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_PATH: /app/storage
+    ports:
+      - "4000:4000"
+    volumes:
+      - ucmm_storage:/app/storage
+
+  # Optional: lightweight DB browser at http://localhost:8080
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  ucmm_pgdata:
+  ucmm_storage:

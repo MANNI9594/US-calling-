@@ -1,0 +1,437 @@
+// ============================================================================
+// US Calling Master Manager — Database Schema
+// ============================================================================
+// See /docs/ARCHITECTURE.md for the conceptual model this implements, and
+// /docs/EXCEL_STRUCTURE_FINDINGS.md for why the schema looks the way it does
+// (in particular: why VesselEvidence is its own reviewable entity, and why
+// Ballast/Loaded + Arrival Port + ETA/ETD live on VesselCallingRecord instead
+// of Vessel).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// AUTH — single user, but modeled properly (not hardcoded) so a second user
+// or a password reset flow is a data change, not a code change.
+// ----------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  sessions Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ----------------------------------------------------------------------------
+// VESSEL — permanent profile only. Nothing here changes because a new US
+// Calling List was uploaded; it only changes via manual edit or Master import
+// of a genuinely new/updated permanent field.
+// ----------------------------------------------------------------------------
+
+enum VesselStatus {
+  ACTIVE // currently in the Active Master
+  ARCHIVED // removed from Active Master, retained in the Vessel Database
+
+  @@map("vessel_status")
+}
+
+enum ServiceFeesApplicable {
+  YES
+  NO
+  NA
+  UNKNOWN
+
+  @@map("service_fees_applicable")
+}
+
+model Vessel {
+  id     String       @id @default(uuid())
+  status VesselStatus @default(ACTIVE)
+
+  // --- Identity ---
+  vesselName           String  @map("vessel_name")
+  vesselNameNormalized String  @map("vessel_name_normalized") // lowercased, whitespace/punctuation-collapsed, for matching
+  imoNumber            String? @map("imo_number") // stored as text: source data has non-numeric/placeholder values
+  imoNumberPlausible    Boolean @default(true) @map("imo_number_plausible") // false if checksum fails — see dataQuality issues for detail
+
+  // --- Permanent Master fields (from the 17-column reference workbook) ---
+  flag                    String?
+  vesselType              String?                @map("vessel_type") // Bulk / Container / Tanker / LNG / Car Carrier
+  summerDeadweightOrTeu   String?                @map("summer_deadweight_or_teu") // kept as text: source mixes DWT (bulk) and TEU (container) in one column
+  registeredOwnerPerCor   String?                @map("registered_owner_per_cor") // "...as per Certificate of Registry"
+  registeredOwnerPerCsr   String?                @map("registered_owner_per_csr") // "...as per CSR"
+  operatorNameInCofr      String?                @map("operator_name_in_cofr")
+  bridgeLetter            String?               @map("bridge_letter")
+  builtLocation           String?                @map("built_location")
+  serviceFeesApplicable   ServiceFeesApplicable  @default(UNKNOWN) @map("service_fees_applicable")
+
+  // --- Bookkeeping ---
+  sourceImportBatchId String?  @map("source_import_batch_id") // which Master import first created this row, if any
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  archivedAt           DateTime? @map("archived_at")
+  restoredAt           DateTime? @map("restored_at")
+
+  callingRecords VesselCallingRecord[]
+  evidence       VesselEvidence[]
+  dataQualityIssues DataQualityIssue[]
+  auditLogs      AuditLog[]
+  matchReviewItems MatchReviewItem[]
+
+  // Unique only when non-null — partial unique index added via raw SQL migration
+  // (Prisma can't express "unique where not null" directly; see migration 0002).
+  @@index([vesselNameNormalized])
+  @@index([imoNumber])
+  @@index([status])
+  @@map("vessels")
+}
+
+// ----------------------------------------------------------------------------
+// VESSEL CALLING RECORD — operational data. One row is "current" per vessel;
+// prior rows are kept for history/audit rather than overwritten in place.
+// This is where Ballast/Loaded, Arrival Port, ETA, ETD live — all of these
+// are properties of a specific call, not the vessel itself.
+// ----------------------------------------------------------------------------
+
+enum CallingRecordSource {
+  MASTER_IMPORT
+  US_CALLING_LIST_UPLOAD
+  MANUAL_EDIT
+  RESTORE
+
+  @@map("calling_record_source")
+}
+
+model VesselCallingRecord {
+  id       String @id @default(uuid())
+  vesselId String @map("vessel_id")
+  vessel   Vessel @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+
+  isCurrent Boolean @default(true) @map("is_current")
+
+  arrivalPort String? @map("arrival_port")
+
+  etaRaw    String?   @map("eta_raw") // exactly as supplied, e.g. "20.08.2026" or "06.09.026"
+  etaParsed DateTime? @map("eta_parsed") // null if unparseable — see DataQualityIssue, never guessed
+
+  etdRaw    String?   @map("etd_raw")
+  etdParsed DateTime? @map("etd_parsed")
+
+  ballastOrLoaded String? @map("ballast_or_loaded") // "Ballast" / "Loaded" — varies per call, not permanent
+
+  // Fields that originate from the US Calling List specifically (optional,
+  // absent for records created purely from Master import):
+  voyageType      String? @map("voyage_type") // e.g. "Foreign to US" / "US to US"
+  transactionType String? @map("transaction_type") // e.g. "Initial" / "Update"
+  sendTo          String? @map("send_to") // e.g. "NVMC"
+
+  source    CallingRecordSource @default(MANUAL_EDIT)
+  sourceImportBatchId String? @map("source_import_batch_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  dataQualityIssues DataQualityIssue[]
+
+  @@index([vesselId, isCurrent])
+  @@map("vessel_calling_records")
+}
+
+// ----------------------------------------------------------------------------
+// VESSEL EVIDENCE — the IMO-website screenshots. First-class, reviewable,
+// never silently dropped, never silently auto-merged. See EXCEL_STRUCTURE
+// _FINDINGS.md: the source workbook already has 16 of these mis-anchored to
+// one row, so association MUST be an explicit, correctable relationship —
+// never inferred from Excel row position at read time.
+// ----------------------------------------------------------------------------
+
+enum EvidenceAssociationMethod {
+  ORIGINAL_ANCHOR // the source workbook anchored this image cleanly to one row
+  OCR_AUTO_MATCH // OCR/content analysis proposed this vessel
+  MANUAL // user assigned/reassigned it by hand
+  UNASSIGNED // not yet associated with any vessel
+
+  @@map("evidence_association_method")
+}
+
+enum EvidenceReviewStatus {
+  CONFIRMED // user has confirmed the vessel association is correct
+  NEEDS_REVIEW // automatically associated, awaiting user confirmation
+  UNASSIGNED // sits in the Unassigned Evidence pool
+  REJECTED_DUPLICATE // user marked as a duplicate of another evidence record
+  REJECTED_IRRELEVANT // user marked as not relevant / not usable evidence
+
+  @@map("evidence_review_status")
+}
+
+model VesselEvidence {
+  id       String  @id @default(uuid())
+  vesselId String? @map("vessel_id") // NULLABLE — evidence can exist unassigned
+  vessel   Vessel? @relation(fields: [vesselId], references: [id], onDelete: SetNull)
+
+  // --- Asset storage (see services/storage — provider-independent) ---
+  storageKey   String @map("storage_key") // key/path in the active StorageProvider
+  originalFilename String? @map("original_filename") // e.g. "image2.png" from the source xlsx
+  contentHash  String @map("content_hash") // sha256, for dedupe detection
+  mimeType     String @map("mime_type")
+  fileSizeBytes Int   @map("file_size_bytes")
+
+  // --- Forensic trace back to the source workbook (never used for live
+  // association logic — recorded so a human can always audit "where did
+  // this come from", per the row-2 pileup discovered in Phase 1) ---
+  sourceAnchorRow    Int?    @map("source_anchor_row") // 0-indexed drawing anchor row, as found in source xlsx
+  sourceAnchorCol    Int?    @map("source_anchor_col")
+  sourceRelationshipId String? @map("source_relationship_id") // e.g. "rId2"
+
+  // --- Association ---
+  associationMethod     EvidenceAssociationMethod @default(UNASSIGNED) @map("association_method")
+  associationConfidence Decimal?                  @db.Decimal(4, 3) @map("association_confidence") // 0.000–1.000, null if not scored
+  reviewStatus          EvidenceReviewStatus       @default(UNASSIGNED) @map("review_status")
+
+  // --- OCR / content analysis output (Phase 7 will populate; schema exists now
+  // so the review UI has something to render and nothing needs a later migration) ---
+  ocrExtractedText   String? @map("ocr_extracted_text") @db.Text
+  ocrExtractedFields Json?   @map("ocr_extracted_fields") // best-effort structured guess: {ownerName, imoNumber, classificationSociety, ...}
+
+  reviewedByUserId String?   @map("reviewed_by_user_id")
+  reviewedAt       DateTime? @map("reviewed_at")
+
+  supersedesEvidenceId String? @map("supersedes_evidence_id") // set if this replaces an earlier evidence record for the same vessel
+
+  sourceImportBatchId String @map("source_import_batch_id")
+  importBatch         ImportBatch @relation(fields: [sourceImportBatchId], references: [id])
+
+  isActive  Boolean  @default(true) @map("is_active") // false = superseded, kept for history, never deleted
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([vesselId])
+  @@index([reviewStatus])
+  @@index([contentHash])
+  @@map("vessel_evidence")
+}
+
+// ----------------------------------------------------------------------------
+// MATCH REVIEW ITEM — ambiguous vessel matches surfaced during a US Calling
+// List upload (Phase 4/5 logic lands later; the table exists now so the
+// review model is settled before that logic is written).
+// ----------------------------------------------------------------------------
+
+enum MatchReviewStatus {
+  PENDING
+  RESOLVED_MATCHED
+  RESOLVED_NEW_VESSEL
+  RESOLVED_IGNORED
+
+  @@map("match_review_status")
+}
+
+model MatchReviewItem {
+  id       String  @id @default(uuid())
+  importBatchId String @map("import_batch_id")
+  importBatch   ImportBatch @relation(fields: [importBatchId], references: [id])
+
+  incomingRowJson Json   @map("incoming_row_json") // the raw uploaded row that was ambiguous
+  candidateVesselId String? @map("candidate_vessel_id")
+  candidateVessel   Vessel? @relation(fields: [candidateVesselId], references: [id])
+  candidateScore    Decimal? @db.Decimal(4, 3) @map("candidate_score")
+
+  status    MatchReviewStatus @default(PENDING)
+  resolvedAt DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([importBatchId])
+  @@index([status])
+  @@map("match_review_items")
+}
+
+// ----------------------------------------------------------------------------
+// DATA QUALITY ISSUE — flags, never silent conversion. E.g. "06.09.026" stays
+// stored verbatim in *Raw fields; this table is what tells the UI to render
+// the ⚠️ instead of guessing a year.
+// ----------------------------------------------------------------------------
+
+enum DataQualityEntityType {
+  VESSEL
+  CALLING_RECORD
+  EVIDENCE
+
+  @@map("data_quality_entity_type")
+}
+
+enum DataQualityIssueType {
+  INVALID_DATE_FORMAT
+  IMPLAUSIBLE_IMO
+  MISSING_REQUIRED_FIELD
+  AMBIGUOUS_VESSEL_MATCH
+  DUPLICATE_VESSEL_CANDIDATE
+  ETD_BEFORE_ETA
+  PAST_ETD
+  OTHER
+
+  @@map("data_quality_issue_type")
+}
+
+enum DataQualitySeverity {
+  INFO
+  WARNING
+  ERROR
+
+  @@map("data_quality_severity")
+}
+
+enum DataQualityStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+
+  @@map("data_quality_status")
+}
+
+model DataQualityIssue {
+  id String @id @default(uuid())
+
+  entityType DataQualityEntityType @map("entity_type")
+
+  vesselId String? @map("vessel_id")
+  vessel   Vessel? @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+
+  callingRecordId String?              @map("calling_record_id")
+  callingRecord   VesselCallingRecord? @relation(fields: [callingRecordId], references: [id], onDelete: Cascade)
+
+  fieldName String               @map("field_name")
+  issueType DataQualityIssueType @map("issue_type")
+  rawValue  String?              @map("raw_value")
+  message   String
+  severity  DataQualitySeverity  @default(WARNING)
+  status    DataQualityStatus    @default(OPEN)
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  @@index([status])
+  @@index([entityType])
+  @@map("data_quality_issues")
+}
+
+// ----------------------------------------------------------------------------
+// IMPORT BATCH — every Master import, US Calling List upload, export, and
+// backup/restore is one traceable batch. Processing is atomic: a batch is
+// either COMPLETED or the DB looks like it never happened (see
+// docs/ARCHITECTURE.md "Atomicity").
+// ----------------------------------------------------------------------------
+
+enum ImportBatchType {
+  MASTER_IMPORT
+  US_CALLING_LIST_UPLOAD
+  MASTER_EXPORT
+  BACKUP_EXPORT
+  BACKUP_RESTORE
+
+  @@map("import_batch_type")
+}
+
+enum ImportBatchStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  ROLLED_BACK
+
+  @@map("import_batch_status")
+}
+
+model ImportBatch {
+  id   String          @id @default(uuid())
+  type ImportBatchType
+
+  originalFilename String? @map("original_filename")
+  storageKey       String? @map("storage_key") // the original uploaded/generated file, kept as an asset
+
+  status      ImportBatchStatus @default(PENDING)
+  summaryJson Json?             @map("summary_json") // e.g. {matched: 37, unchanged: 5, newUnmatched: 2, ambiguous: 1, pastEtd: 4}
+  errorMessage String?          @map("error_message")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  evidenceRecords   VesselEvidence[]
+  matchReviewItems  MatchReviewItem[]
+  auditLogs         AuditLog[]
+
+  @@index([type])
+  @@index([status])
+  @@map("import_batches")
+}
+
+// ----------------------------------------------------------------------------
+// AUDIT LOG — practical, single-user history. Not an enterprise audit system.
+// ----------------------------------------------------------------------------
+
+enum AuditEventType {
+  VESSEL_ADDED
+  VESSEL_REMOVED
+  VESSEL_RESTORED
+  VESSEL_PERMANENTLY_DELETED
+  ETA_CHANGED
+  ETD_CHANGED
+  PORT_CHANGED
+  MASTER_IMPORTED
+  US_CALLING_LIST_UPLOADED
+  MASTER_EXPORTED
+  EVIDENCE_ASSIGNED
+  EVIDENCE_REASSIGNED
+  EVIDENCE_REJECTED
+  MANUAL_EDIT
+  LOGIN
+  BACKUP_CREATED
+  BACKUP_RESTORED
+
+  @@map("audit_event_type")
+}
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  eventType AuditEventType @map("event_type")
+
+  vesselId String? @map("vessel_id")
+  vessel   Vessel? @relation(fields: [vesselId], references: [id], onDelete: SetNull)
+
+  importBatchId String?      @map("import_batch_id")
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  actorUserId String? @map("actor_user_id") // null for system-initiated events (e.g. atomic rollback)
+  summary     String
+  detailJson  Json?   @map("detail_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([eventType])
+  @@index([vesselId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

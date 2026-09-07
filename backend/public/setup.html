@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — First-Time Setup</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 60px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; }
+  p.hint { color: #555; font-size: 0.9rem; }
+  label { display: block; margin-top: 16px; font-weight: 600; font-size: 0.9rem; }
+  input { width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+  button { margin-top: 24px; width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  #result { margin-top: 20px; padding: 12px; border-radius: 6px; display: none; font-size: 0.9rem; }
+  #result.success { background: #dcfce7; color: #166534; display: block; }
+  #result.error { background: #fee2e2; color: #991b1b; display: block; }
+</style>
+</head>
+<body>
+  <h1>US Calling Master Manager</h1>
+  <p class="hint">
+    One-time setup. This creates your single login. This page only works
+    once — if an account already exists, use the regular login instead.
+  </p>
+
+  <form id="setupForm">
+    <label for="email">Email</label>
+    <input type="email" id="email" required autocomplete="email" />
+
+    <label for="password">Password (min. 10 characters)</label>
+    <input type="password" id="password" required minlength="10" autocomplete="new-password" />
+
+    <button type="submit" id="submitBtn">Create my account</button>
+  </form>
+
+  <div id="result"></div>
+
+  <script>
+    const form = document.getElementById('setupForm');
+    const resultBox = document.getElementById('result');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating...';
+      resultBox.className = '';
+      resultBox.style.display = 'none';
+
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        // Same-origin call: this page is served by the backend itself, so
+        // no CORS setup or separate frontend is needed for this one screen.
+        const res = await fetch('/api/auth/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          resultBox.className = 'success';
+          resultBox.textContent = `Account created for ${data.email}. Redirecting you to the import page...`;
+          form.style.display = 'none';
+          setTimeout(() => { window.location.href = '/import.html'; }, 1500);
+        } else {
+          resultBox.className = 'error';
+          resultBox.textContent = data.error || 'Setup failed.';
+          if (data.details) {
+            resultBox.textContent += ' ' + JSON.stringify(data.details.fieldErrors || data.details);
+          }
+        }
+      } catch (err) {
+        resultBox.className = 'error';
+        resultBox.textContent = 'Could not reach the server. Check that the app has finished deploying.';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create my account';
+      }
+    });
+  </script>
+</body>
+</html>

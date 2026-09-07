@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Import Master Workbook</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
+  #dropzone {
+    border: 2px dashed #94a3b8; border-radius: 10px; padding: 40px 20px; text-align: center;
+    color: #555; cursor: pointer; margin-top: 20px; transition: background 0.15s, border-color 0.15s;
+  }
+  #dropzone.dragover { background: #f0f9ff; border-color: #0f172a; }
+  #dropzone input { display: none; }
+  button { padding: 10px 20px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  button.secondary { background: white; color: #0f172a; border: 1px solid #cbd5e1; }
+  .row { display: flex; gap: 10px; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f8fafc; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 20px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .badge.success { background: #dcfce7; color: #166534; }
+  .badge.error { background: #fee2e2; color: #991b1b; }
+  .badge.warn { background: #fef3c7; color: #92400e; }
+  #message { margin-top: 16px; padding: 12px; border-radius: 6px; display: none; font-size: 0.9rem; white-space: pre-wrap; }
+  #message.error { background: #fee2e2; color: #991b1b; display: block; }
+  #message.info { background: #eff6ff; color: #1e40af; display: block; }
+  ul.vessel-list { max-height: 160px; overflow-y: auto; margin: 6px 0; padding-left: 20px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>Import Master Workbook</h1>
+  <p class="hint">
+    This is a one-time (or occasional) upload of the controlling Master workbook.
+    It seeds the vessel database — it does not get re-run daily. Use "Update from
+    US Calling List" for day-to-day ETA/ETD updates once that screen exists.
+  </p>
+
+  <div id="dropzone">
+    <p><strong>Drop the Master .xlsx file here</strong>, or click to choose a file.</p>
+    <input type="file" id="fileInput" accept=".xlsx" />
+  </div>
+
+  <div id="fileInfo" style="display:none; margin-top: 12px; font-size: 0.9rem;"></div>
+
+  <div class="row">
+    <button id="previewBtn" disabled>Preview Import</button>
+  </div>
+
+  <div id="message"></div>
+
+  <div id="previewCard" class="card" style="display:none;">
+    <h3>Import Preview</h3>
+    <div id="previewSummary"></div>
+    <div class="row">
+      <button id="commitBtn">Confirm &amp; Import</button>
+      <button id="cancelBtn" class="secondary">Cancel</button>
+    </div>
+  </div>
+
+  <div id="resultCard" class="card" style="display:none;">
+    <h3>Import Result</h3>
+    <div id="resultSummary"></div>
+  </div>
+
+  <div class="card">
+    <h3>Import History</h3>
+    <div id="history">Loading…</div>
+  </div>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const previewBtn = document.getElementById('previewBtn');
+    const message = document.getElementById('message');
+    const previewCard = document.getElementById('previewCard');
+    const previewSummary = document.getElementById('previewSummary');
+    const commitBtn = document.getElementById('commitBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const resultCard = document.getElementById('resultCard');
+    const resultSummary = document.getElementById('resultSummary');
+    const historyDiv = document.getElementById('history');
+
+    let selectedFile = null;
+    let previewData = null;
+
+    // --- Auth guard: redirect to login if session isn't valid ---
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    function showMessage(text, type) {
+      message.className = type;
+      message.textContent = text;
+      message.style.display = 'block';
+    }
+    function clearMessage() {
+      message.style.display = 'none';
+    }
+
+    function setFile(file) {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        showMessage('Only .xlsx files are accepted.', 'error');
+        return;
+      }
+      selectedFile = file;
+      fileInfo.style.display = 'block';
+      fileInfo.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+      previewBtn.disabled = false;
+      previewCard.style.display = 'none';
+      resultCard.style.display = 'none';
+      clearMessage();
+    }
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => setFile(e.target.files[0]));
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      setFile(e.dataTransfer.files[0]);
+    });
+
+    previewBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      previewBtn.disabled = true;
+      previewBtn.textContent = 'Analyzing…';
+      clearMessage();
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        const res = await fetch('/api/import/master-workbook/preview', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showMessage(data.error || 'Preview failed.', 'error');
+          return;
+        }
+
+        previewData = data.preview;
+        renderPreview(previewData);
+      } catch {
+        showMessage('Could not reach the server.', 'error');
+      } finally {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview Import';
+      }
+    });
+
+    function renderPreview(p) {
+      const rows = [
+        ['Sheet name', p.sheetName],
+        ['Vessel rows found', p.rowCount],
+        ['Total image anchors', p.imageCount],
+        ['Cleanly-anchored images (provisional, still NEEDS_REVIEW)', p.cleanImageAssociationCount],
+        ['Images requiring manual/OCR review (pileup)', p.pileupImageCount],
+        ['New vessels to be created', p.vesselsNew.length],
+        ['Vessels already in database (will be skipped, not overwritten)', p.vesselsAlreadyInDatabase.length],
+      ];
+
+      let html = '<table>' + rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('') + '</table>';
+
+      if (p.vesselsAlreadyInDatabase.length > 0) {
+        html += `<p><strong>Already in database (skipped):</strong></p><ul class="vessel-list">${p.vesselsAlreadyInDatabase.map((v) => `<li>${v}</li>`).join('')}</ul>`;
+      }
+      if (p.readerWarnings.length > 0) {
+        html += `<p><span class="badge warn">Warnings</span></p><ul class="vessel-list">${p.readerWarnings.map((w) => `<li>${w}</li>`).join('')}</ul>`;
+      }
+
+      previewSummary.innerHTML = html;
+      previewCard.style.display = 'block';
+      resultCard.style.display = 'none';
+    }
+
+    cancelBtn.addEventListener('click', () => {
+      previewCard.style.display = 'none';
+      previewData = null;
+    });
+
+    commitBtn.addEventListener('click', async () => {
+      if (!previewData) return;
+      commitBtn.disabled = true;
+      commitBtn.textContent = 'Importing…';
+
+      try {
+        const res = await fetch('/api/import/master-workbook/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            storageKey: previewData.storageKey,
+            originalFilename: previewData.originalFilename,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showMessage(data.error || 'Import failed.', 'error');
+          return;
+        }
+
+        const s = data.summary;
+        resultSummary.innerHTML = `
+          <p><span class="badge success">Import complete</span></p>
+          <table>
+            <tr><th>Vessels created</th><td>${s.vesselsCreated}</td></tr>
+            <tr><th>Vessels skipped (already existed)</th><td>${s.vesselsSkippedAlreadyExists}</td></tr>
+            <tr><th>Evidence cleanly associated (still needs your review)</th><td>${s.evidenceCleanlyAssociated}</td></tr>
+            <tr><th>Evidence sent to Unassigned pool</th><td>${s.evidenceUnassigned}</td></tr>
+            <tr><th>Data quality issues flagged</th><td>${s.dataQualityIssuesRaised}</td></tr>
+            <tr><th>Past-ETD vessels flagged (not removed)</th><td>${s.pastEtdCount}</td></tr>
+          </table>
+        `;
+        resultCard.style.display = 'block';
+        previewCard.style.display = 'none';
+        loadHistory();
+      } catch {
+        showMessage('Could not reach the server during import.', 'error');
+      } finally {
+        commitBtn.disabled = false;
+        commitBtn.textContent = 'Confirm & Import';
+      }
+    });
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/import/batches?type=MASTER_IMPORT&limit=10', { credentials: 'include' });
+        const data = await res.json();
+        if (!res.ok || !data.batches || data.batches.length === 0) {
+          historyDiv.textContent = 'No Master imports yet.';
+          return;
+        }
+        historyDiv.innerHTML = '<table><tr><th>File</th><th>Date</th><th>Status</th><th>Summary</th></tr>' +
+          data.batches.map((b) => {
+            const badge = b.status === 'COMPLETED' ? 'success' : b.status === 'FAILED' ? 'error' : 'warn';
+            const s = b.summaryJson;
+            const summaryText = s ? `${s.vesselsCreated} created, ${s.vesselsSkippedAlreadyExists} skipped` : (b.errorMessage || '—');
+            return `<tr><td>${b.originalFilename ?? '—'}</td><td>${new Date(b.createdAt).toLocaleString()}</td><td><span class="badge ${badge}">${b.status}</span></td><td>${summaryText}</td></tr>`;
+          }).join('') + '</table>';
+      } catch {
+        historyDiv.textContent = 'Could not load import history.';
+      }
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>

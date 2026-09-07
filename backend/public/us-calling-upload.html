@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Update from US Calling List</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
+  #dropzone {
+    border: 2px dashed #94a3b8; border-radius: 10px; padding: 32px 20px; text-align: center;
+    color: #555; cursor: pointer; margin-top: 16px;
+  }
+  #dropzone.dragover { background: #f0f9ff; border-color: #0f172a; }
+  #dropzone input { display: none; }
+  button { padding: 10px 20px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  button.secondary { background: white; color: #0f172a; border: 1px solid #cbd5e1; }
+  .row { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f8fafc; position: sticky; top: 0; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 20px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+  .badge.UPDATED { background: #dbeafe; color: #1e40af; }
+  .badge.UNCHANGED { background: #f1f5f9; color: #475569; }
+  .badge.NEW { background: #fef3c7; color: #92400e; }
+  .badge.ARCHIVED_FOUND { background: #ede9fe; color: #5b21b6; }
+  .badge.AMBIGUOUS { background: #fee2e2; color: #991b1b; }
+  #message { margin-top: 16px; padding: 12px; border-radius: 6px; display: none; font-size: 0.9rem; white-space: pre-wrap; }
+  #message.error { background: #fee2e2; color: #991b1b; display: block; }
+  .table-scroll { max-height: 420px; overflow-y: auto; }
+  label.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; margin-top: 12px; }
+  .warn-text { color: #b45309; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+  <h1>Update from US Calling List</h1>
+  <p class="hint">
+    The daily workflow: upload the latest US Calling List, review what would change, then apply it.
+    This never touches permanent vessel profile fields — only ETA, ETD, Port, and voyage metadata.
+  </p>
+
+  <div id="dropzone">
+    <p><strong>Drop the US Calling List .xlsx file here</strong>, or click to choose a file.</p>
+    <input type="file" id="fileInput" accept=".xlsx" />
+  </div>
+
+  <div id="fileInfo" style="display:none; margin-top: 10px; font-size: 0.9rem;"></div>
+
+  <div class="row">
+    <button id="previewBtn" disabled>Preview Changes</button>
+  </div>
+
+  <div id="message"></div>
+
+  <div id="previewCard" class="card" style="display:none;">
+    <h3>Proposed Changes</h3>
+    <div id="counts"></div>
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="restoreArchivedCheckbox" />
+      Also restore any archived vessels found in this list back to the Active Master
+    </label>
+
+    <div class="table-scroll">
+      <table id="changeTable"></table>
+    </div>
+
+    <div class="row">
+      <button id="commitBtn">Apply Changes</button>
+      <button id="cancelBtn" class="secondary">Cancel</button>
+    </div>
+  </div>
+
+  <div id="resultCard" class="card" style="display:none;">
+    <h3>Update Result</h3>
+    <div id="resultSummary"></div>
+  </div>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const previewBtn = document.getElementById('previewBtn');
+    const message = document.getElementById('message');
+    const previewCard = document.getElementById('previewCard');
+    const countsDiv = document.getElementById('counts');
+    const changeTable = document.getElementById('changeTable');
+    const commitBtn = document.getElementById('commitBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const resultCard = document.getElementById('resultCard');
+    const resultSummary = document.getElementById('resultSummary');
+    const restoreCheckbox = document.getElementById('restoreArchivedCheckbox');
+
+    let selectedFile = null;
+    let previewData = null;
+
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    function showMessage(text, type) {
+      message.className = type;
+      message.textContent = text;
+      message.style.display = 'block';
+    }
+    function clearMessage() {
+      message.style.display = 'none';
+    }
+
+    function setFile(file) {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        showMessage('Only .xlsx files are accepted.', 'error');
+        return;
+      }
+      selectedFile = file;
+      fileInfo.style.display = 'block';
+      fileInfo.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+      previewBtn.disabled = false;
+      previewCard.style.display = 'none';
+      resultCard.style.display = 'none';
+      clearMessage();
+    }
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => setFile(e.target.files[0]));
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      setFile(e.dataTransfer.files[0]);
+    });
+
+    previewBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      previewBtn.disabled = true;
+      previewBtn.textContent = 'Analyzing…';
+      clearMessage();
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        const res = await fetch('/api/us-calling-list/preview', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showMessage(data.error || 'Preview failed.', 'error');
+          return;
+        }
+
+        previewData = data.preview;
+        renderPreview(previewData);
+      } catch {
+        showMessage('Could not reach the server.', 'error');
+      } finally {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview Changes';
+      }
+    });
+
+    function renderPreview(p) {
+      const c = p.counts;
+      countsDiv.innerHTML = `
+        <table>
+          <tr><th>Total rows</th><td>${p.rowCount}</td></tr>
+          <tr><th>Updated</th><td>${c.updated}</td></tr>
+          <tr><th>Unchanged</th><td>${c.unchanged}</td></tr>
+          <tr><th>New / Unknown vessel (not applied)</th><td>${c.newUnknown}</td></tr>
+          <tr><th>Archived vessel found</th><td>${c.archivedFound}</td></tr>
+          <tr><th>Ambiguous match (not applied)</th><td>${c.ambiguous}</td></tr>
+          <tr><th>Past ETD (flagged, not removed)</th><td>${c.pastEtd}</td></tr>
+        </table>
+      `;
+
+      changeTable.innerHTML = `
+        <tr><th>Vessel</th><th>Status</th><th>Old ETA</th><th>New ETA</th><th>Old ETD</th><th>New ETD</th><th>Old Port</th><th>New Port</th><th>Warnings</th></tr>
+        ${p.rows.map((r) => `
+          <tr>
+            <td>${r.vesselNameRaw}${r.matchedVesselName && r.matchedVesselName !== r.vesselNameRaw ? ' (' + r.matchedVesselName + ')' : ''}</td>
+            <td><span class="badge ${r.changeStatus}">${r.changeStatus}</span></td>
+            <td>${r.previousEta ?? '—'}</td>
+            <td>${r.newEta ?? '—'}</td>
+            <td>${r.previousEtd ?? '—'}</td>
+            <td>${r.newEtd ?? '—'}</td>
+            <td>${r.previousPort ?? '—'}</td>
+            <td>${r.newPort ?? '—'}</td>
+            <td class="warn-text">${r.dateWarnings.join('; ')}</td>
+          </tr>
+        `).join('')}
+      `;
+
+      previewCard.style.display = 'block';
+      resultCard.style.display = 'none';
+    }
+
+    cancelBtn.addEventListener('click', () => {
+      previewCard.style.display = 'none';
+      previewData = null;
+    });
+
+    commitBtn.addEventListener('click', async () => {
+      if (!previewData) return;
+      commitBtn.disabled = true;
+      commitBtn.textContent = 'Applying…';
+
+      try {
+        const res = await fetch('/api/us-calling-list/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            storageKey: previewData.storageKey,
+            originalFilename: previewData.originalFilename,
+            restoreArchivedVessels: restoreCheckbox.checked,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showMessage(data.error || 'Update failed.', 'error');
+          return;
+        }
+
+        const s = data.summary;
+        resultSummary.innerHTML = `
+          <p><span class="badge UPDATED">Applied</span></p>
+          <table>
+            <tr><th>Rows processed</th><td>${s.rowsProcessed}</td></tr>
+            <tr><th>Vessels updated</th><td>${s.vesselsUpdated}</td></tr>
+            <tr><th>Vessels unchanged</th><td>${s.vesselsUnchanged}</td></tr>
+            <tr><th>Vessels restored from archive</th><td>${s.vesselsRestored}</td></tr>
+            <tr><th>Archived vessels found but not restored</th><td>${s.archivedSkipped}</td></tr>
+            <tr><th>New/unknown vessels skipped</th><td>${s.newUnknownSkipped}</td></tr>
+            <tr><th>Ambiguous matches skipped</th><td>${s.ambiguousSkipped}</td></tr>
+            <tr><th>Data quality issues flagged</th><td>${s.dataQualityIssuesRaised}</td></tr>
+          </table>
+        `;
+        resultCard.style.display = 'block';
+        previewCard.style.display = 'none';
+      } catch {
+        showMessage('Could not reach the server during update.', 'error');
+      } finally {
+        commitBtn.disabled = false;
+        commitBtn.textContent = 'Apply Changes';
+      }
+    });
+  </script>
+</body>
+</html>

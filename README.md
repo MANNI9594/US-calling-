@@ -2,7 +2,7 @@
 
 A personal, single-user, browser-based tool for managing a US Calling Vessel Master Excel workbook: uploading updated ETA/ETD lists, matching vessels, reviewing changes, archiving/restoring vessels, and exporting an updated Master workbook — without ever requiring software installation on the office PC.
 
-**Status:** Phase 4 of 11 complete (Evidence Repair via OCR). See `docs/ROADMAP.md` for exactly what's built, tested, and what's next. **Currently deployed and live on Railway** — `/api/health` on your deployed URL confirms it's running.
+**Status:** Phase 5 of 11 complete (US Calling List Processor — the daily-use update workflow). See `docs/ROADMAP.md` for exactly what's built, tested, and what's next. **Currently deployed and live on Railway** — `/api/health` on your deployed URL confirms it's running.
 
 ## Start here
 

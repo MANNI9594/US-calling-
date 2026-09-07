@@ -87,11 +87,28 @@ Built and tested:
 
 **Next phase:** Phase 5 — US Calling List Processor (the daily-use upload that actually updates ETA/ETD/Port for existing vessels — this is the workflow the user will use routinely, distinct from the occasional Master re-import).
 
-## Phase 5 — US Calling List Processor — NOT STARTED
+## Phase 5 — US Calling List Processor ✅ COMPLETE
 
-Planned: upload, header-tolerant column mapping, date normalization (`DD-MM-YYYY`), matching engine (IMO → exact normalized name → manual review), proposed-change computation.
+Built and tested:
+- `usCallingListReader.ts` — header-tolerant column mapping (case/whitespace-insensitive, and specifically tolerates the spec's actual "Transection type" header spelling rather than "correcting" it), validates the three genuinely-required columns (Vessel Name, ETA, ETD) and produces a clear error naming exactly which are missing otherwise. Tested via a real in-memory xlsx round-trip built with the exact example rows from the user's spec (Alfred N, Atlantic Sunshine, Atlantic Sunflower, Athens C).
+- `callingListMatching.ts` — pure matching logic: exact-normalized-name match against `ACTIVE_MATCH` / `ARCHIVED_MATCH` / `NEW_UNKNOWN` / `AMBIGUOUS`. Tested against real vessel names from the reference workbook, and critically re-confirms the "Atlantic Sunshine" vs. "Atlantic Sunflower" must-not-merge requirement with two real similarly-named vessels in the same candidate list.
+- `usCallingImportService.ts` — two-phase preview/commit, same pattern as Master Import:
+  - Preview computes a per-row change status (`UPDATED`/`UNCHANGED`/`NEW`/`ARCHIVED_FOUND`/`AMBIGUOUS`) by comparing against each vessel's current `VesselCallingRecord`, plus date-quality warnings (malformed dates, ETD-before-ETA, past-ETD) — all informational, nothing written yet.
+  - Commit runs inside one transaction: for each confidently-matched row, the prior "current" calling record is marked non-current (never deleted — that's the history) and a new one is created and data-quality-checked. `NEW_UNKNOWN` and `AMBIGUOUS` rows are always skipped (never auto-created or auto-resolved). `ARCHIVED_MATCH` rows are only restored (`Vessel.status → ACTIVE`, `restoredAt` set, `VESSEL_RESTORED` audit logged) if the user explicitly opts in via a checkbox — this is the "Archived Vessel Found → Restore & Update" convenience feature from the spec, scoped to a single all-or-nothing toggle per upload rather than per-row selection (a reasonable simplification for a personal tool; per-row selection would be a natural refinement if it turns out to matter in practice).
+- `uscalling.routes.ts` — `POST /preview`, `POST /commit`.
+- `public/us-calling-upload.html` — the actual daily-use page: drag/drop, a change-review table (vessel, status badge, old/new ETA/ETD/Port, warnings), a checkbox for the archived-restore behavior, and an apply-result summary.
 
-## Phase 6 — Review — NOT STARTED
+**Verified:** 57/57 automated tests passing (12 new this phase). As with Phase 4, this phase's testable claims were tested against real inputs — the exact example rows from the user's own spec (including the deliberately-misspelled "Transection type" header) and real vessel names from the reference workbook (including the specific must-not-merge pair the spec calls out by name).
+
+**Known issues / open questions:**
+- **Not yet tested against the live Railway deployment.** Same category of gap as every other phase before its first live run: the pieces are individually tested, but the full chain (real upload → real database matching → real transaction commit) has not yet executed against production. Next action: user uploads a real US Calling List (even a small hand-made one covering a few of the 44 real vessels) through `/us-calling-upload.html` and reports what the preview and commit show.
+- The "restore archived vessels" decision is a single checkbox covering the whole upload, not a per-row choice. If the user has both an archived vessel they want back and one they don't in the same upload, this phase can't split that — worth revisiting if it comes up in real use.
+- `NEW_UNKNOWN` rows (a vessel in the list that doesn't exist in the database at all) are surfaced in the preview/summary but there is still no UI to act on them (create a vessel profile from a calling-list row) — this remains explicitly deferred, consistent with the spec's own instruction not to auto-create a full permanent profile from incomplete operational data.
+- `AMBIGUOUS` rows (a name matching more than one vessel) are surfaced but not resolvable through any UI yet — expected to be rare (it requires two vessels already sharing a normalized name, which import-time duplicate detection should prevent going forward) but not impossible with pre-existing data.
+
+**Next phase:** Phase 6 — Review (a more capable, dedicated change-review UI is largely already delivered as part of this phase's upload page; the formal Phase 6 gap is primarily the ambiguous-match and new-vessel resolution workflows called out above) and/or Phase 7 — Active Master (the main table view with search/filter/multi-select-remove that ties everything together).
+
+## Phase 6 — Review — PARTIALLY COVERED (see Phase 5 notes above)
 
 Planned: change dashboard (updated/unchanged/new/ambiguous/archived-found/past-ETD/invalid counts + detail table), confirmation workflow before anything commits.
 

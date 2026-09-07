@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth.routes';
 import { vesselsRouter } from './routes/vessels.routes';
 import { evidenceRouter } from './routes/evidence.routes';
 import { importRouter } from './routes/import.routes';
+import { usCallingRouter } from './routes/uscalling.routes';
 import { errorHandler } from './middleware/errorHandler';
 
 export const logger = pino({ level: env.NODE_ENV === 'production' ? 'info' : 'debug' });
@@ -44,6 +45,7 @@ export function createApp() {
   app.use('/api/vessels', vesselsRouter);
   app.use('/api/evidence', evidenceRouter);
   app.use('/api/import', importRouter);
+  app.use('/api/us-calling-list', usCallingRouter);
 
   // Serves setup.html — a browser-only one-time account creation page, so
   // no curl/CLI is needed even for that step. See docs/DEPLOYMENT.md.

@@ -150,10 +150,26 @@ Answering that question surfaced a real gap: the original Phase 3 implementation
 
 Fixed: before creating any evidence row (clean-associated or pileup), `masterImportService.ts` now checks whether an active `VesselEvidence` row with the same `contentHash` already exists anywhere in the database, and skips creating a duplicate if so. A new `evidenceSkippedDuplicate` counter was added to the import summary and surfaced in `public/import.html`.
 
-**Not yet tested live** — the original bug was caught by reasoning about the code, not by reproducing it against production. Next action, if the user wants to actually confirm this: re-upload the same Master workbook a second time and check that `evidenceSkippedDuplicate` matches the image count and no new duplicate evidence rows appear for existing vessels.
+**Verified live on Railway with a real updated Master file** (not a repeat of the same file — an actual newer version with 5 new vessels): 44 previously-existing vessels correctly skipped with zero profile overwrites, 5 new vessels correctly created, **52 duplicate evidence images correctly skipped** (the entire original evidence set, recognized by content hash), and 4 new evidence images correctly added for the new vessels. This is a complete, real-world confirmation of the exact re-upload scenario the fix targets.
 
 **Documented behavior for Master re-upload, now complete:**
 - Vessels already in the database (by IMO if plausible, else exact normalized name) → skipped, permanent fields never overwritten.
 - Genuinely new vessels in the updated file → created normally.
 - Evidence images identical (by content hash) to an already-stored active evidence record → skipped, no duplicate created.
 - Evidence images that are new/different content → created as usual (clean-associated as `NEEDS_REVIEW`, pileup as `UNASSIGNED`), even for an already-existing vessel — e.g., if the Master file's screenshot for a vessel was updated to a newer IMO-website capture, the new image is correctly added rather than silently dropped.
+
+## Phase 7 — Active Master ✅ COMPLETE
+
+Built:
+- `POST /api/vessels/archive` / `POST /api/vessels/restore` — bulk status transitions (`ACTIVE ⇄ ARCHIVED`), each vessel processed in a transaction, individually audit-logged (`VESSEL_REMOVED` / `VESSEL_RESTORED`), and — critically — this is a status flip, never a delete: the permanent profile, all evidence, and all calling-record history are untouched either way. No separate permanent-delete action exists yet, consistent with the spec's instruction that it be a distinct, explicitly-confirmed advanced action, not a default capability.
+- `public/active-master.html` — the main view: tabbed Active/Archived, search (name + IMO), sortable-by-ETA table (reuses the existing `GET /api/vessels` sort logic from Phase 2), multi-select checkboxes with Select All / Clear Selection / Remove or Restore Selected (with a confirmation dialog stating the action is reversible), a `PAST ETD` badge sourced from existing open `DataQualityIssue` records, and a click-to-expand vessel detail panel (all permanent fields, current operational data, evidence count, open data-quality issues) using the existing `GET /api/vessels/:id` endpoint.
+- Unified navigation added across all five main pages (Active Master, Import, Update from US Calling List, Evidence Review), and login/setup now redirect to Active Master as the natural home page instead of the Import page.
+
+**Verified:** 58/58 tests passing, no regressions. No new pure-logic unit tests were added this phase — the archive/restore endpoints are thin, low-risk status transitions built entirely from already-tested pieces (audit logging, transaction pattern), and the table page itself is a UI composition of already-tested API endpoints rather than new business logic. **Not yet tested live** — next action: user opens `/active-master.html`, confirms the real 49 vessels render correctly sorted by ETA, tries selecting a couple and removing them, confirms they move to the Archived tab, then restores them back.
+
+**Known issues / open questions:**
+- No permanent-delete action exists yet (by design — deferred until there's a real need, per the spec's own caution against over-building).
+- The vessel detail panel is a lightweight inline expansion, not the full dedicated "Vessel Profile" page with a history timeline described in the spec (section 25) — that remains a Phase 8 refinement if it turns out to matter beyond what this panel already shows.
+- Search only covers vessel name and IMO (matching the existing `GET /api/vessels` capability) — filtering by status/port/flag etc. is not yet exposed in the UI even though the data supports it.
+
+**Next phase:** Phase 8 — Restore / Vessel Database (the dedicated archive-search screen and the "archived vessel found in a new US Calling List → one-click restore & update" convenience flow — note the underlying restore mechanics already exist from Phase 5/7, so this phase is primarily UI/detection work at this point) — or Phase 9 (XLSX Export), which is arguably the more commonly wanted remaining piece: turning the current database state back into a downloadable Master workbook.

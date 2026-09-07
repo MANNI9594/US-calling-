@@ -64,9 +64,9 @@
 
         if (res.ok) {
           resultBox.className = 'success';
-          resultBox.textContent = `Account created for ${data.email}. Redirecting you to the import page...`;
+          resultBox.textContent = `Account created for ${data.email}. Redirecting you to the Active Master...`;
           form.style.display = 'none';
-          setTimeout(() => { window.location.href = '/import.html'; }, 1500);
+          setTimeout(() => { window.location.href = '/active-master.html'; }, 1500);
         } else {
           resultBox.className = 'error';
           resultBox.textContent = data.error || 'Setup failed.';

@@ -55,7 +55,7 @@
         const data = await res.json();
 
         if (res.ok) {
-          window.location.href = '/import.html';
+          window.location.href = '/active-master.html';
         } else {
           resultBox.className = 'error';
           resultBox.textContent = data.error || 'Login failed.';

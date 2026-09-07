@@ -227,3 +227,81 @@ vesselsRouter.post('/', asyncHandler(async (req, res) => {
 
   res.status(201).json({ vessel: result.vessel, dataQualityIssuesRaised: result.dataQualityIssuesRaised });
 }));
+
+const bulkVesselIdsSchema = z.object({ vesselIds: z.array(z.string().uuid()).min(1) });
+
+/**
+ * Removes selected vessels from the Active Master. This is NEVER a delete
+ * — it flips status to ARCHIVED, retaining the full permanent profile,
+ * all evidence, and all calling-record history, exactly as the spec's
+ * core distinction requires ("Remove from Active Master" ≠ "Delete").
+ * A separate, explicitly-confirmed permanent-delete action does not exist
+ * yet and is intentionally out of scope until there's a real need for it.
+ */
+vesselsRouter.post('/archive', asyncHandler(async (req, res) => {
+  const parsed = bulkVesselIdsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    let archived = 0;
+    let skipped = 0;
+    for (const vesselId of parsed.data.vesselIds) {
+      const vessel = await tx.vessel.findUnique({ where: { id: vesselId } });
+      if (!vessel || vessel.status !== 'ACTIVE') {
+        skipped += 1;
+        continue;
+      }
+      await tx.vessel.update({ where: { id: vesselId }, data: { status: 'ARCHIVED', archivedAt: new Date() } });
+      await logAudit({
+        eventType: 'VESSEL_REMOVED',
+        vesselId,
+        actorUserId: req.userId,
+        summary: `${vessel.vesselName} removed from Active Master (archived, not deleted)`,
+      });
+      archived += 1;
+    }
+    return { archived, skipped };
+  });
+
+  res.json(result);
+}));
+
+/**
+ * Restores selected vessels from the archive back to the Active Master.
+ * Current ETA/ETD are left as whatever they were when archived — the
+ * expectation (per spec) is that the next US Calling List upload supplies
+ * fresh operational data, not this endpoint.
+ */
+vesselsRouter.post('/restore', asyncHandler(async (req, res) => {
+  const parsed = bulkVesselIdsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    let restored = 0;
+    let skipped = 0;
+    for (const vesselId of parsed.data.vesselIds) {
+      const vessel = await tx.vessel.findUnique({ where: { id: vesselId } });
+      if (!vessel || vessel.status !== 'ARCHIVED') {
+        skipped += 1;
+        continue;
+      }
+      await tx.vessel.update({ where: { id: vesselId }, data: { status: 'ACTIVE', restoredAt: new Date() } });
+      await logAudit({
+        eventType: 'VESSEL_RESTORED',
+        vesselId,
+        actorUserId: req.userId,
+        summary: `${vessel.vesselName} restored to Active Master`,
+      });
+      restored += 1;
+    }
+    return { restored, skipped };
+  });
+
+  res.json(result);
+}));

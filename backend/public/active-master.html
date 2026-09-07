@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Active Master</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px 24px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
+  nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 0.85rem; }
+  nav a { color: #0f172a; text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
+  nav a:hover { border-bottom-color: #0f172a; }
+  .tabs { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid #e5e7eb; }
+  .tab { padding: 8px 16px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 0.9rem; color: #555; }
+  .tab.active { background: #0f172a; color: white; font-weight: 600; }
+  .controls { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+  input#searchInput { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; width: 240px; }
+  button { padding: 7px 14px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+  button.secondary { background: white; color: #0f172a; border: 1px solid #cbd5e1; }
+  button.danger { background: #991b1b; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  .table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.82rem; white-space: nowrap; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid #eef1f5; text-align: left; }
+  thead th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+  tbody tr:hover { background: #fafbfc; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+  .badge.past-etd { background: #fee2e2; color: #991b1b; }
+  .badge.dq { background: #fef3c7; color: #92400e; }
+  .vessel-link { color: #0f172a; cursor: pointer; text-decoration: underline; font-weight: 600; }
+  #detailPanel { display: none; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 16px; background: #fafbfc; }
+  #detailPanel h3 { margin-top: 0; }
+  #detailPanel dl { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; font-size: 0.85rem; }
+  #detailPanel dt { font-weight: 600; color: #555; }
+  #message { margin-top: 12px; padding: 10px; border-radius: 6px; display: none; font-size: 0.85rem; }
+  #message.success { background: #dcfce7; color: #166534; display: block; }
+  #message.error { background: #fee2e2; color: #991b1b; display: block; }
+  .empty-state { padding: 30px; text-align: center; color: #94a3b8; }
+</style>
+</head>
+<body>
+  <nav>
+    <a href="/active-master.html">Active Master</a>
+    <a href="/import.html">Import Master Workbook</a>
+    <a href="/us-calling-upload.html">Update from US Calling List</a>
+    <a href="/evidence-review.html">Evidence Review</a>
+  </nav>
+
+  <h1>Active Master</h1>
+  <p class="hint">Sorted by ETA (earliest first). Search covers vessel name and IMO number.</p>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="controls">
+    <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." />
+    <button id="selectAllBtn" class="secondary">Select All</button>
+    <button id="clearSelectionBtn" class="secondary">Clear Selection</button>
+    <button id="actionBtn" class="danger" disabled>Remove Selected</button>
+    <span id="selectionCount" style="font-size: 0.85rem; color: #555;"></span>
+  </div>
+
+  <div id="message"></div>
+
+  <div class="table-wrap">
+    <table id="masterTable"></table>
+  </div>
+
+  <div id="detailPanel"></div>
+
+  <script>
+    let activeTab = 'ACTIVE';
+    let vessels = [];
+    let selected = new Set();
+    let searchTimer = null;
+
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    function renderTabs() {
+      const tabsDiv = document.getElementById('tabs');
+      tabsDiv.innerHTML = `
+        <div class="tab ${activeTab === 'ACTIVE' ? 'active' : ''}" data-key="ACTIVE">Active Master</div>
+        <div class="tab ${activeTab === 'ARCHIVED' ? 'active' : ''}" data-key="ARCHIVED">Archived</div>
+      `;
+      tabsDiv.querySelectorAll('.tab').forEach((el) => {
+        el.addEventListener('click', () => {
+          activeTab = el.dataset.key;
+          selected.clear();
+          renderTabs();
+          updateActionButton();
+          loadVessels();
+        });
+      });
+
+      document.getElementById('actionBtn').textContent = activeTab === 'ACTIVE' ? 'Remove Selected' : 'Restore Selected';
+      document.getElementById('actionBtn').className = activeTab === 'ACTIVE' ? 'danger' : '';
+    }
+
+    function updateActionButton() {
+      const btn = document.getElementById('actionBtn');
+      btn.disabled = selected.size === 0;
+      document.getElementById('selectionCount').textContent = selected.size > 0 ? `${selected.size} selected` : '';
+    }
+
+    async function loadVessels() {
+      const table = document.getElementById('masterTable');
+      table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      const search = document.getElementById('searchInput').value.trim();
+
+      const params = new URLSearchParams({ status: activeTab, sortBy: 'eta', sortDir: 'asc' });
+      if (search) params.set('search', search);
+
+      const res = await fetch(`/api/vessels?${params.toString()}`, { credentials: 'include' });
+      const data = await res.json();
+      vessels = data.vessels || [];
+      renderTable();
+    }
+
+    function hasPastEtd(v) {
+      return (v.dataQualityIssues || []).some((i) => i.issueType === 'PAST_ETD');
+    }
+    function openDqCount(v) {
+      return (v.dataQualityIssues || []).length;
+    }
+
+    function renderTable() {
+      const table = document.getElementById('masterTable');
+      if (vessels.length === 0) {
+        table.innerHTML = '<tr><td class="empty-state">No vessels found.</td></tr>';
+        return;
+      }
+
+      const rows = vessels.map((v) => {
+        const cr = (v.callingRecords || [])[0] || {};
+        const checked = selected.has(v.id) ? 'checked' : '';
+        return `
+          <tr>
+            <td><input type="checkbox" class="rowCheck" data-id="${v.id}" ${checked} /></td>
+            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${hasPastEtd(v) ? '<span class="badge past-etd">PAST ETD</span>' : ''} ${openDqCount(v) > 0 && !hasPastEtd(v) ? `<span class="badge dq">${openDqCount(v)} flag(s)</span>` : ''}</td>
+            <td>${v.imoNumber ?? '—'}</td>
+            <td>${v.flag ?? '—'}</td>
+            <td>${v.vesselType ?? '—'}</td>
+            <td>${cr.arrivalPort ?? '—'}</td>
+            <td>${cr.etaRaw ?? '—'}</td>
+            <td>${cr.etdRaw ?? '—'}</td>
+            <td>${(v.evidence || []).length}</td>
+          </tr>
+        `;
+      }).join('');
+
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th></th>
+            <th>Vessel</th>
+            <th>IMO</th>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Port</th>
+            <th>ETA</th>
+            <th>ETD</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      `;
+
+      table.querySelectorAll('.rowCheck').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) selected.add(cb.dataset.id);
+          else selected.delete(cb.dataset.id);
+          updateActionButton();
+        });
+      });
+      table.querySelectorAll('.vessel-link').forEach((el) => {
+        el.addEventListener('click', () => showDetail(el.dataset.id));
+      });
+    }
+
+    async function showDetail(vesselId) {
+      const panel = document.getElementById('detailPanel');
+      panel.style.display = 'block';
+      panel.innerHTML = 'Loading…';
+
+      const res = await fetch(`/api/vessels/${vesselId}`, { credentials: 'include' });
+      const data = await res.json();
+      const v = data.vessel;
+      const cr = (v.callingRecords || []).find((r) => r.isCurrent) || {};
+
+      panel.innerHTML = `
+        <h3>${v.vesselName} <button class="secondary" id="closeDetailBtn" style="float:right;">Close</button></h3>
+        <dl>
+          <dt>IMO Number</dt><dd>${v.imoNumber ?? '—'}${v.imoNumberPlausible === false ? ' <span class="badge dq">implausible</span>' : ''}</dd>
+          <dt>Flag</dt><dd>${v.flag ?? '—'}</dd>
+          <dt>Vessel Type</dt><dd>${v.vesselType ?? '—'}</dd>
+          <dt>Summer Deadweight/TEU</dt><dd>${v.summerDeadweightOrTeu ?? '—'}</dd>
+          <dt>Registered Owner (CoR)</dt><dd>${v.registeredOwnerPerCor ?? '—'}</dd>
+          <dt>Registered Owner (CSR)</dt><dd>${v.registeredOwnerPerCsr ?? '—'}</dd>
+          <dt>Operator (COFR)</dt><dd>${v.operatorNameInCofr ?? '—'}</dd>
+          <dt>Bridge Letter</dt><dd>${v.bridgeLetter ?? '—'}</dd>
+          <dt>Built Location</dt><dd>${v.builtLocation ?? '—'}</dd>
+          <dt>Service Fees</dt><dd>${v.serviceFeesApplicable ?? '—'}</dd>
+          <dt>Current Port / ETA / ETD</dt><dd>${cr.arrivalPort ?? '—'} / ${cr.etaRaw ?? '—'} / ${cr.etdRaw ?? '—'}</dd>
+          <dt>Voyage / Transaction / Send To</dt><dd>${cr.voyageType ?? '—'} / ${cr.transactionType ?? '—'} / ${cr.sendTo ?? '—'}</dd>
+          <dt>Evidence records</dt><dd>${(v.evidence || []).length} (<a href="/evidence-review.html" target="_blank">review</a>)</dd>
+          <dt>Open data quality issues</dt><dd>${(v.dataQualityIssues || []).map((i) => `${i.issueType}: ${i.message}`).join('<br>') || 'None'}</dd>
+        </dl>
+      `;
+      document.getElementById('closeDetailBtn').addEventListener('click', () => { panel.style.display = 'none'; });
+    }
+
+    document.getElementById('searchInput').addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadVessels, 300);
+    });
+
+    document.getElementById('selectAllBtn').addEventListener('click', () => {
+      vessels.forEach((v) => selected.add(v.id));
+      renderTable();
+      updateActionButton();
+    });
+    document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+      selected.clear();
+      renderTable();
+      updateActionButton();
+    });
+
+    document.getElementById('actionBtn').addEventListener('click', async () => {
+      if (selected.size === 0) return;
+      const verb = activeTab === 'ACTIVE' ? 'remove and archive' : 'restore';
+      if (!confirm(`${verb.charAt(0).toUpperCase() + verb.slice(1)} ${selected.size} vessel(s)? ${activeTab === 'ACTIVE' ? 'Their information will be archived and can be restored later.' : ''}`)) {
+        return;
+      }
+
+      const endpoint = activeTab === 'ACTIVE' ? '/api/vessels/archive' : '/api/vessels/restore';
+      const message = document.getElementById('message');
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ vesselIds: Array.from(selected) }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          message.className = 'error';
+          message.textContent = data.error || 'Action failed.';
+          message.style.display = 'block';
+          return;
+        }
+        message.className = 'success';
+        const count = data.archived ?? data.restored ?? 0;
+        message.textContent = `Done: ${count} vessel(s) ${activeTab === 'ACTIVE' ? 'removed and archived' : 'restored'}${data.skipped ? `, ${data.skipped} skipped (already in that state)` : ''}.`;
+        selected.clear();
+        updateActionButton();
+        loadVessels();
+      } catch {
+        message.className = 'error';
+        message.textContent = 'Could not reach the server.';
+        message.style.display = 'block';
+      }
+    });
+
+    renderTabs();
+    loadVessels();
+  </script>
+</body>
+</html>

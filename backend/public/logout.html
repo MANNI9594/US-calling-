@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Logging out…</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+</style>
+</head>
+<body>
+  <p class="text-muted">Logging out…</p>
+  <script>
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      .catch(() => {})
+      .finally(() => { window.location.href = '/login.html'; });
+  </script>
+</body>
+</html>

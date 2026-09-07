@@ -4,78 +4,82 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>US Calling Master Manager — Add Vessel</title>
+<link rel="stylesheet" href="/styles.css" />
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
-  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
-  fieldset { border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 16px; padding: 12px 16px; }
-  legend { font-weight: 600; font-size: 0.9rem; padding: 0 6px; }
-  label { display: block; margin-top: 10px; font-size: 0.85rem; font-weight: 600; }
-  input, select { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; }
-  button { margin-top: 20px; padding: 10px 20px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
-  button:disabled { background: #94a3b8; cursor: not-allowed; }
-  #result { margin-top: 16px; padding: 12px; border-radius: 6px; display: none; font-size: 0.9rem; }
-  #result.success { background: #dcfce7; color: #166534; display: block; }
-  #result.error { background: #fee2e2; color: #991b1b; display: block; }
-  .pending-op { background: #eff6ff; padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; margin-top: 14px; }
+  .pending-op { background: var(--blue-50); color: #1e40af; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.85rem; margin-top: 14px; }
 </style>
 </head>
 <body>
-  <h1>Add Vessel to Database</h1>
-  <p class="hint">
-    This vessel didn't match anything in the database. Fill in what you know from the Master's
-    permanent fields — nothing here is invented automatically.
-  </p>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/active-master.html">Active Master</a>
+    <a href="/import.html">Import Master Workbook</a>
+    <a href="/us-calling-upload.html">Update from US Calling List</a>
+    <a href="/evidence-review.html">Evidence Review</a>
+    <a href="/manage-team.html">Team</a>
+    <a href="/logout.html">Logout</a>
+  </nav>
 
-  <div class="pending-op" id="pendingOpInfo" style="display:none;"></div>
+  <div class="page narrow">
+    <div class="page-header">
+      <div>
+        <h1>Add Vessel to Database</h1>
+        <p class="hint">This vessel didn't match anything in the database. Fill in what you know — nothing here is invented automatically.</p>
+      </div>
+    </div>
 
-  <form id="addForm">
-    <label for="vesselName">Vessel Name *</label>
-    <input type="text" id="vesselName" required />
+    <div class="pending-op" id="pendingOpInfo" style="display:none;"></div>
 
-    <fieldset>
-      <legend>Permanent Profile</legend>
+    <form id="addForm">
+      <label for="vesselName">Vessel Name *</label>
+      <input type="text" id="vesselName" required />
 
-      <label for="imoNumber">IMO Number</label>
-      <input type="text" id="imoNumber" />
+      <fieldset>
+        <legend>Permanent Profile</legend>
 
-      <label for="flag">Flag</label>
-      <input type="text" id="flag" />
+        <label for="imoNumber">IMO Number</label>
+        <input type="text" id="imoNumber" />
 
-      <label for="vesselType">Vessel Type</label>
-      <input type="text" id="vesselType" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
+        <label for="flag">Flag</label>
+        <input type="text" id="flag" />
 
-      <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
-      <input type="text" id="summerDeadweightOrTeu" />
+        <label for="vesselType">Vessel Type</label>
+        <input type="text" id="vesselType" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
 
-      <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
-      <input type="text" id="registeredOwnerPerCor" />
+        <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
+        <input type="text" id="summerDeadweightOrTeu" />
 
-      <label for="registeredOwnerPerCsr">Registered Owner (per CSR)</label>
-      <input type="text" id="registeredOwnerPerCsr" />
+        <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
+        <input type="text" id="registeredOwnerPerCor" />
 
-      <label for="operatorNameInCofr">Operator's Name in COFR</label>
-      <input type="text" id="operatorNameInCofr" />
+        <label for="registeredOwnerPerCsr">Registered Owner (per CSR)</label>
+        <input type="text" id="registeredOwnerPerCsr" />
 
-      <label for="bridgeLetter">Bridge Letter</label>
-      <input type="text" id="bridgeLetter" />
+        <label for="operatorNameInCofr">Operator's Name in COFR</label>
+        <input type="text" id="operatorNameInCofr" />
 
-      <label for="builtLocation">Built Location</label>
-      <input type="text" id="builtLocation" />
+        <label for="bridgeLetter">Bridge Letter</label>
+        <input type="text" id="bridgeLetter" />
 
-      <label for="serviceFeesApplicable">Service Fees Applicable</label>
-      <select id="serviceFeesApplicable">
-        <option value="UNKNOWN">Unknown</option>
-        <option value="YES">Yes</option>
-        <option value="NO">No</option>
-        <option value="NA">N/A</option>
-      </select>
-    </fieldset>
+        <label for="builtLocation">Built Location</label>
+        <input type="text" id="builtLocation" />
 
-    <button type="submit" id="submitBtn">Create Vessel</button>
-  </form>
+        <label for="serviceFeesApplicable">Service Fees Applicable</label>
+        <select id="serviceFeesApplicable">
+          <option value="UNKNOWN">Unknown</option>
+          <option value="YES">Yes</option>
+          <option value="NO">No</option>
+          <option value="NA">N/A</option>
+        </select>
+      </fieldset>
 
-  <div id="result"></div>
+      <div style="margin-top: 16px;">
+        <button type="submit" id="submitBtn" class="btn btn-accent">Create Vessel</button>
+      </div>
+    </form>
+
+    <div id="result" class="alert"></div>
+  </div>
 
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -111,7 +115,7 @@
       e.preventDefault();
       submitBtn.disabled = true;
       submitBtn.textContent = 'Creating...';
-      resultBox.style.display = 'none';
+      resultBox.className = 'alert';
 
       const body = {
         vesselName: document.getElementById('vesselName').value,
@@ -143,15 +147,15 @@
         const data = await res.json();
 
         if (res.ok) {
-          resultBox.className = 'success';
-          resultBox.textContent = `${data.vessel.vesselName} added to the Active Master${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged \u2014 check its profile)` : ''}.`;
+          resultBox.className = 'alert alert-success show';
+          resultBox.textContent = `${data.vessel.vesselName} added to the Active Master${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged — check its profile)` : ''}.`;
           form.style.display = 'none';
         } else {
-          resultBox.className = 'error';
+          resultBox.className = 'alert alert-error show';
           resultBox.textContent = data.error || 'Could not create vessel.';
         }
       } catch {
-        resultBox.className = 'error';
+        resultBox.className = 'alert alert-error show';
         resultBox.textContent = 'Could not reach the server.';
       } finally {
         submitBtn.disabled = false;

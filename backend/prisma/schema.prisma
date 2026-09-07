@@ -409,6 +409,7 @@ enum AuditEventType {
   LOGIN
   BACKUP_CREATED
   BACKUP_RESTORED
+  TEAM_MEMBER_ADDED
 
   @@map("audit_event_type")
 }

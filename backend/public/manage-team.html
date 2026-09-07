@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Team</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/active-master.html">Active Master</a>
+    <a href="/import.html">Import Master Workbook</a>
+    <a href="/us-calling-upload.html">Update from US Calling List</a>
+    <a href="/evidence-review.html">Evidence Review</a>
+    <a href="/manage-team.html" class="active">Team</a>
+    <a href="/logout.html">Logout</a>
+  </nav>
+
+  <div class="page narrow">
+    <div class="page-header">
+      <div>
+        <h1>Team</h1>
+        <p class="hint">Everyone here shares the same Master data. Add an account for each teammate, or share one login — both work.</p>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data-table" id="usersTable"><tr><td>Loading…</td></tr></table>
+    </div>
+
+    <fieldset>
+      <legend>Add a team member</legend>
+      <form id="addForm">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="email" />
+
+        <label for="password">Temporary password (min. 10 characters)</label>
+        <input type="password" id="password" required minlength="10" autocomplete="new-password" />
+
+        <div style="margin-top: 16px;">
+          <button type="submit" id="submitBtn" class="btn btn-accent">Add Team Member</button>
+        </div>
+      </form>
+      <div id="result" class="alert"></div>
+    </fieldset>
+  </div>
+
+  <script>
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    async function loadUsers() {
+      const table = document.getElementById('usersTable');
+      const res = await fetch('/api/auth/users', { credentials: 'include' });
+      const data = await res.json();
+      if (!data.users) { table.innerHTML = '<tr><td>Could not load team list.</td></tr>'; return; }
+
+      table.innerHTML = `
+        <thead><tr><th>Email</th><th>Added</th><th>Last Login</th></tr></thead>
+        <tbody>${data.users.map((u) => `
+          <tr>
+            <td>${u.email}</td>
+            <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+            <td>${u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never'}</td>
+          </tr>
+        `).join('')}</tbody>
+      `;
+    }
+
+    const form = document.getElementById('addForm');
+    const resultBox = document.getElementById('result');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Adding...';
+      resultBox.className = 'alert';
+
+      try {
+        const res = await fetch('/api/auth/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          resultBox.className = 'alert alert-success show';
+          resultBox.textContent = `${data.email} added. Share the email and temporary password with them directly — there's no email-invite step.`;
+          form.reset();
+          loadUsers();
+        } else {
+          resultBox.className = 'alert alert-error show';
+          resultBox.textContent = data.error || 'Could not add team member.';
+        }
+      } catch {
+        resultBox.className = 'alert alert-error show';
+        resultBox.textContent = 'Could not reach the server.';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add Team Member';
+      }
+    });
+
+    loadUsers();
+  </script>
+</body>
+</html>

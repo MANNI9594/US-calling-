@@ -4,78 +4,69 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>US Calling Master Manager — Evidence Review</title>
+<link rel="stylesheet" href="/styles.css" />
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 960px; margin: 30px auto; padding: 0 20px; color: #1a1a1a; }
-  nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 0.85rem; }
-  nav a { color: #0f172a; text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
-  nav a:hover { border-bottom-color: #0f172a; }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
-  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
-  .tabs { display: flex; gap: 4px; margin-top: 20px; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; }
-  .tab { padding: 8px 16px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 0.9rem; color: #555; }
-  .tab.active { background: #0f172a; color: white; font-weight: 600; }
-  .tab .count { opacity: 0.8; margin-left: 4px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 20px; }
-  .card { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: white; }
-  .card img { width: 100%; height: 120px; object-fit: contain; background: #f8fafc; cursor: zoom-in; display: block; }
-  .card-body { padding: 10px; font-size: 0.85rem; }
-  .vessel-name { font-weight: 600; margin-bottom: 4px; }
-  .vessel-name.none { color: #94a3b8; font-style: italic; font-weight: 400; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-bottom: 6px; }
-  .badge.needs { background: #fef3c7; color: #92400e; }
-  .badge.unassigned { background: #e0e7ff; color: #3730a3; }
-  .badge.confirmed { background: #dcfce7; color: #166534; }
-  .badge.rejected { background: #fee2e2; color: #991b1b; }
-  .actions { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
-  .actions button { flex: 1; min-width: 60px; padding: 6px 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #cbd5e1; background: white; cursor: pointer; }
-  .actions button.confirm { background: #166534; color: white; border: none; }
-  .actions button.reject { background: white; color: #991b1b; }
-  .empty { color: #94a3b8; padding: 40px; text-align: center; }
-  #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; cursor: zoom-out; }
-  #lightbox img { max-width: 90%; max-height: 90%; }
-  button#ocrRepairBtn { padding: 8px 16px; background: #0f172a; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-  button#ocrRepairBtn:disabled { background: #94a3b8; cursor: not-allowed; }
-  .confidence { font-size: 0.75rem; color: #555; margin-top: 4px; }
-  .no-evidence-section { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 16px; }
-  .no-evidence-section ul { columns: 3; font-size: 0.85rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+  .ev-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); transition: box-shadow 0.15s; }
+  .ev-card:hover { box-shadow: var(--shadow-md); }
+  .ev-card img { width: 100%; height: 120px; object-fit: contain; background: var(--bg-subtle); cursor: zoom-in; display: block; }
+  .ev-card-body { padding: 12px; }
+  .vessel-name { font-weight: 700; margin: 6px 0 4px; font-size: 0.9rem; }
+  .vessel-name.none { color: var(--text-400); font-style: italic; font-weight: 400; }
+  .confidence { font-size: 0.75rem; color: var(--text-600); margin-bottom: 8px; }
+  .ev-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .ev-actions .btn { flex: 1; min-width: 60px; padding: 6px 4px; font-size: 0.72rem; }
+  #lightbox { display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.9); z-index: 100; align-items: center; justify-content: center; cursor: zoom-out; }
+  #lightbox img { max-width: 90%; max-height: 90%; border-radius: var(--radius); }
+  .no-evidence-section { margin-top: 32px; }
+  .no-evidence-section ul { columns: 3; font-size: 0.85rem; color: var(--text-600); }
+  .ocr-controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  #ocrStatus { font-size: 0.82rem; color: var(--text-600); }
 </style>
 </head>
 <body>
-  <nav>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
     <a href="/active-master.html">Active Master</a>
     <a href="/import.html">Import Master Workbook</a>
     <a href="/us-calling-upload.html">Update from US Calling List</a>
-    <a href="/evidence-review.html">Evidence Review</a>
+    <a href="/evidence-review.html" class="active">Evidence Review</a>
+    <a href="/manage-team.html">Team</a>
+    <a href="/logout.html">Logout</a>
   </nav>
 
-  <h1>Evidence Review</h1>
-  <p class="hint">
-    Every screenshot from the Master workbook, sorted by review status. Nothing here was
-    auto-confirmed — even a "cleanly anchored" image from the original file needs your
-    confirmation before it counts as verified.
-  </p>
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Evidence Review</h1>
+        <p class="hint">Every screenshot from the Master workbook, sorted by review status. Nothing here was auto-confirmed.</p>
+      </div>
+    </div>
 
-  <div class="tabs" id="tabs"></div>
-  <div style="margin-top: 12px;">
-    <button id="ocrRepairBtn">Run OCR Matching on Unassigned Evidence</button>
-    <span id="ocrStatus" style="margin-left: 10px; font-size: 0.85rem; color: #555;"></span>
-  </div>
-  <div class="grid" id="grid"></div>
+    <div class="chip-row" id="tabs"></div>
 
-  <div class="no-evidence-section">
-    <h3>Vessels with no evidence at all</h3>
-    <div id="noEvidenceList">Loading…</div>
+    <div class="ocr-controls">
+      <button id="ocrRepairBtn" class="btn btn-accent">Run OCR Matching on Unassigned Evidence</button>
+      <span id="ocrStatus"></span>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="card no-evidence-section">
+      <h3>Vessels with no evidence at all</h3>
+      <div id="noEvidenceList">Loading…</div>
+    </div>
   </div>
 
   <div id="lightbox"><img id="lightboxImg" src="" /></div>
 
   <script>
     const TABS = [
-      { key: 'NEEDS_REVIEW', label: 'Needs Review', badgeClass: 'needs' },
-      { key: 'UNASSIGNED', label: 'Unassigned', badgeClass: 'unassigned' },
-      { key: 'CONFIRMED', label: 'Confirmed', badgeClass: 'confirmed' },
-      { key: 'REJECTED_DUPLICATE', label: 'Rejected (Duplicate)', badgeClass: 'rejected' },
-      { key: 'REJECTED_IRRELEVANT', label: 'Rejected (Irrelevant)', badgeClass: 'rejected' },
+      { key: 'NEEDS_REVIEW', label: 'Needs Review', dot: 'amber' },
+      { key: 'UNASSIGNED', label: 'Unassigned', dot: 'blue' },
+      { key: 'CONFIRMED', label: 'Confirmed', dot: 'green' },
+      { key: 'REJECTED_DUPLICATE', label: 'Rejected (Duplicate)', dot: 'red' },
+      { key: 'REJECTED_IRRELEVANT', label: 'Rejected (Irrelevant)', dot: 'red' },
     ];
     let activeTab = 'NEEDS_REVIEW';
     let counts = {};
@@ -96,9 +87,9 @@
     function renderTabs() {
       const tabsDiv = document.getElementById('tabs');
       tabsDiv.innerHTML = TABS.map(
-        (t) => `<div class="tab ${t.key === activeTab ? 'active' : ''}" data-key="${t.key}">${t.label}<span class="count">(${counts[t.key] ?? '…'})</span></div>`
+        (t) => `<div class="chip ${t.key === activeTab ? 'active' : ''}" data-key="${t.key}"><span class="dot ${t.dot}"></span>${t.label} (${counts[t.key] ?? '…'})</div>`
       ).join('');
-      tabsDiv.querySelectorAll('.tab').forEach((el) => {
+      tabsDiv.querySelectorAll('.chip').forEach((el) => {
         el.addEventListener('click', () => {
           activeTab = el.dataset.key;
           renderTabs();
@@ -109,21 +100,20 @@
 
     async function loadGrid() {
       const grid = document.getElementById('grid');
-      grid.innerHTML = '<div class="empty">Loading…</div>';
+      grid.innerHTML = '<div class="empty-state">Loading…</div>';
       const res = await fetch(`/api/evidence?status=${activeTab}`, { credentials: 'include' });
       const data = await res.json();
 
       if (!data.evidence || data.evidence.length === 0) {
-        grid.innerHTML = '<div class="empty">Nothing here.</div>';
+        grid.innerHTML = '<div class="empty-state">Nothing here.</div>';
         return;
       }
 
-      const tabMeta = TABS.find((t) => t.key === activeTab);
-      grid.innerHTML = data.evidence.map((ev) => renderCard(ev, tabMeta)).join('');
+      grid.innerHTML = data.evidence.map((ev) => renderCard(ev)).join('');
       wireCardActions();
     }
 
-    function renderCard(ev, tabMeta) {
+    function renderCard(ev) {
       const vesselLabel = ev.vessel
         ? `${ev.vessel.vesselName}${ev.vessel.imoNumber ? ' (IMO ' + ev.vessel.imoNumber + ')' : ''}`
         : null;
@@ -131,34 +121,33 @@
       let confidenceLine = '';
       if (ev.associationMethod === 'OCR_AUTO_MATCH' && ev.associationConfidence != null) {
         const pct = Math.round(parseFloat(ev.associationConfidence) * 100);
-        confidenceLine = `<div class="confidence">OCR suggested \u2014 ${pct}% confidence</div>`;
+        confidenceLine = `<div class="confidence">OCR suggested — ${pct}% confidence</div>`;
       }
 
       let actions = '';
       if (activeTab === 'NEEDS_REVIEW') {
         actions = `
-          <div class="actions">
-            <button class="confirm" data-action="confirm" data-id="${ev.id}">Confirm</button>
-            <button data-action="reassign" data-id="${ev.id}">Reassign</button>
-            <button class="reject" data-action="reject-duplicate" data-id="${ev.id}">Duplicate</button>
-            <button class="reject" data-action="reject-irrelevant" data-id="${ev.id}">Irrelevant</button>
+          <div class="ev-actions">
+            <button class="btn btn-accent" data-action="confirm" data-id="${ev.id}">Confirm</button>
+            <button class="btn btn-secondary" data-action="reassign" data-id="${ev.id}">Reassign</button>
+            <button class="btn btn-secondary" data-action="reject-duplicate" data-id="${ev.id}">Duplicate</button>
+            <button class="btn btn-secondary" data-action="reject-irrelevant" data-id="${ev.id}">Irrelevant</button>
           </div>`;
       } else if (activeTab === 'UNASSIGNED') {
         actions = `
-          <div class="actions">
-            <button data-action="reassign" data-id="${ev.id}">Assign to vessel</button>
-            <button class="reject" data-action="reject-duplicate" data-id="${ev.id}">Duplicate</button>
-            <button class="reject" data-action="reject-irrelevant" data-id="${ev.id}">Irrelevant</button>
+          <div class="ev-actions">
+            <button class="btn btn-accent" data-action="reassign" data-id="${ev.id}">Assign to vessel</button>
+            <button class="btn btn-secondary" data-action="reject-duplicate" data-id="${ev.id}">Duplicate</button>
+            <button class="btn btn-secondary" data-action="reject-irrelevant" data-id="${ev.id}">Irrelevant</button>
           </div>`;
       } else if (activeTab === 'CONFIRMED') {
-        actions = `<div class="actions"><button data-action="reassign" data-id="${ev.id}">Reassign</button></div>`;
+        actions = `<div class="ev-actions"><button class="btn btn-secondary" data-action="reassign" data-id="${ev.id}">Reassign</button></div>`;
       }
 
       return `
-        <div class="card">
+        <div class="ev-card">
           <img src="/api/evidence/${ev.id}/image" loading="lazy" data-full="/api/evidence/${ev.id}/image" />
-          <div class="card-body">
-            <span class="badge ${tabMeta.badgeClass}">${tabMeta.label}</span>
+          <div class="ev-card-body">
             <div class="vessel-name ${vesselLabel ? '' : 'none'}">${vesselLabel || 'No vessel assigned'}</div>
             ${confidenceLine}
             ${actions}
@@ -167,7 +156,7 @@
     }
 
     function wireCardActions() {
-      document.querySelectorAll('.card img').forEach((img) => {
+      document.querySelectorAll('.ev-card img').forEach((img) => {
         img.addEventListener('click', () => {
           document.getElementById('lightboxImg').src = img.dataset.full;
           document.getElementById('lightbox').style.display = 'flex';
@@ -250,7 +239,7 @@
       const btn = document.getElementById('ocrRepairBtn');
       const status = document.getElementById('ocrStatus');
       btn.disabled = true;
-      status.textContent = 'Running OCR on unassigned images \u2014 this can take a minute or two...';
+      status.textContent = 'Running OCR on unassigned images — this can take a minute or two...';
 
       try {
         const res = await fetch('/api/evidence/ocr-repair', {

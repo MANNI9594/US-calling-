@@ -4,69 +4,56 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>US Calling Master Manager — Active Master</title>
+<link rel="stylesheet" href="/styles.css" />
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px 24px; color: #1a1a1a; }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
-  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
-  nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 0.85rem; }
-  nav a { color: #0f172a; text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
-  nav a:hover { border-bottom-color: #0f172a; }
-  .tabs { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid #e5e7eb; }
-  .tab { padding: 8px 16px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 0.9rem; color: #555; }
-  .tab.active { background: #0f172a; color: white; font-weight: 600; }
-  .controls { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
-  input#searchInput { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; width: 240px; }
-  button { padding: 7px 14px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
-  button.secondary { background: white; color: #0f172a; border: 1px solid #cbd5e1; }
-  button.danger { background: #991b1b; }
-  button:disabled { background: #94a3b8; cursor: not-allowed; }
-  .table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 10px; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.82rem; white-space: nowrap; }
-  th, td { padding: 7px 10px; border-bottom: 1px solid #eef1f5; text-align: left; }
-  thead th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
-  tbody tr:hover { background: #fafbfc; }
-  .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
-  .badge.past-etd { background: #fee2e2; color: #991b1b; }
-  .badge.dq { background: #fef3c7; color: #92400e; }
-  .vessel-link { color: #0f172a; cursor: pointer; text-decoration: underline; font-weight: 600; }
-  #detailPanel { display: none; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 16px; background: #fafbfc; }
-  #detailPanel h3 { margin-top: 0; }
-  #detailPanel dl { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; font-size: 0.85rem; }
-  #detailPanel dt { font-weight: 600; color: #555; }
-  #message { margin-top: 12px; padding: 10px; border-radius: 6px; display: none; font-size: 0.85rem; }
-  #message.success { background: #dcfce7; color: #166534; display: block; }
-  #message.error { background: #fee2e2; color: #991b1b; display: block; }
-  .empty-state { padding: 30px; text-align: center; color: #94a3b8; }
+  .detail-panel { display: none; }
+  .detail-panel dl { display: grid; grid-template-columns: 210px 1fr; gap: 6px 14px; font-size: 0.85rem; margin: 0; }
+  .detail-panel dt { font-weight: 600; color: var(--text-600); }
+  .detail-panel dd { margin: 0; }
+  .controls-row { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+  .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
+  .vessel-link { color: var(--blue-700); cursor: pointer; font-weight: 600; text-decoration: none; }
+  .vessel-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
-  <nav>
-    <a href="/active-master.html">Active Master</a>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/active-master.html" class="active">Active Master</a>
     <a href="/import.html">Import Master Workbook</a>
     <a href="/us-calling-upload.html">Update from US Calling List</a>
     <a href="/evidence-review.html">Evidence Review</a>
+    <a href="/manage-team.html">Team</a>
+    <a href="/logout.html">Logout</a>
   </nav>
 
-  <h1>Active Master</h1>
-  <p class="hint">Sorted by ETA (earliest first). Search covers vessel name and IMO number.</p>
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Active Master</h1>
+        <p class="hint">Sorted by ETA (earliest first). Search covers vessel name and IMO number.</p>
+      </div>
+      <a href="/api/export/master-xlsx" class="btn btn-accent">⬇ Download Updated Master XLSX</a>
+    </div>
 
-  <div class="tabs" id="tabs"></div>
+    <div class="chip-row" id="tabs"></div>
 
-  <div class="controls">
-    <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." />
-    <button id="selectAllBtn" class="secondary">Select All</button>
-    <button id="clearSelectionBtn" class="secondary">Clear Selection</button>
-    <button id="actionBtn" class="danger" disabled>Remove Selected</button>
-    <span id="selectionCount" style="font-size: 0.85rem; color: #555;"></span>
+    <div class="controls-row">
+      <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." style="width: 260px;" />
+      <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
+      <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
+      <button id="actionBtn" class="btn btn-danger" disabled>Remove Selected</button>
+      <span class="selection-count" id="selectionCount"></span>
+    </div>
+
+    <div id="message" class="alert"></div>
+
+    <div class="table-wrap">
+      <table class="data-table" id="masterTable"></table>
+    </div>
+
+    <div id="detailPanel" class="card detail-panel"></div>
   </div>
-
-  <div id="message"></div>
-
-  <div class="table-wrap">
-    <table id="masterTable"></table>
-  </div>
-
-  <div id="detailPanel"></div>
 
   <script>
     let activeTab = 'ACTIVE';
@@ -81,10 +68,10 @@
     function renderTabs() {
       const tabsDiv = document.getElementById('tabs');
       tabsDiv.innerHTML = `
-        <div class="tab ${activeTab === 'ACTIVE' ? 'active' : ''}" data-key="ACTIVE">Active Master</div>
-        <div class="tab ${activeTab === 'ARCHIVED' ? 'active' : ''}" data-key="ARCHIVED">Archived</div>
+        <div class="chip ${activeTab === 'ACTIVE' ? 'active' : ''}" data-key="ACTIVE"><span class="dot blue"></span>Active Master</div>
+        <div class="chip ${activeTab === 'ARCHIVED' ? 'active' : ''}" data-key="ARCHIVED"><span class="dot amber"></span>Archived</div>
       `;
-      tabsDiv.querySelectorAll('.tab').forEach((el) => {
+      tabsDiv.querySelectorAll('.chip').forEach((el) => {
         el.addEventListener('click', () => {
           activeTab = el.dataset.key;
           selected.clear();
@@ -94,8 +81,9 @@
         });
       });
 
-      document.getElementById('actionBtn').textContent = activeTab === 'ACTIVE' ? 'Remove Selected' : 'Restore Selected';
-      document.getElementById('actionBtn').className = activeTab === 'ACTIVE' ? 'danger' : '';
+      const actionBtn = document.getElementById('actionBtn');
+      actionBtn.textContent = activeTab === 'ACTIVE' ? 'Remove Selected' : 'Restore Selected';
+      actionBtn.className = 'btn ' + (activeTab === 'ACTIVE' ? 'btn-danger' : 'btn-accent');
     }
 
     function updateActionButton() {
@@ -135,17 +123,18 @@
       const rows = vessels.map((v) => {
         const cr = (v.callingRecords || [])[0] || {};
         const checked = selected.has(v.id) ? 'checked' : '';
+        const past = hasPastEtd(v);
         return `
-          <tr>
+          <tr class="${past ? 'flagged' : ''}">
             <td><input type="checkbox" class="rowCheck" data-id="${v.id}" ${checked} /></td>
-            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${hasPastEtd(v) ? '<span class="badge past-etd">PAST ETD</span>' : ''} ${openDqCount(v) > 0 && !hasPastEtd(v) ? `<span class="badge dq">${openDqCount(v)} flag(s)</span>` : ''}</td>
+            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${past ? '<span class="badge badge-red">Past ETD</span>' : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber">${openDqCount(v)} flag(s)</span>` : ''}</td>
             <td>${v.imoNumber ?? '—'}</td>
             <td>${v.flag ?? '—'}</td>
             <td>${v.vesselType ?? '—'}</td>
             <td>${cr.arrivalPort ?? '—'}</td>
             <td>${cr.etaRaw ?? '—'}</td>
             <td>${cr.etdRaw ?? '—'}</td>
-            <td>${(v.evidence || []).length}</td>
+            <td><span class="badge badge-outline">${(v.evidence || []).length}</span></td>
           </tr>
         `;
       }).join('');
@@ -153,7 +142,7 @@
       table.innerHTML = `
         <thead>
           <tr>
-            <th></th>
+            <th style="width:32px;"></th>
             <th>Vessel</th>
             <th>IMO</th>
             <th>Flag</th>
@@ -190,9 +179,9 @@
       const cr = (v.callingRecords || []).find((r) => r.isCurrent) || {};
 
       panel.innerHTML = `
-        <h3>${v.vesselName} <button class="secondary" id="closeDetailBtn" style="float:right;">Close</button></h3>
+        <h3>${v.vesselName} <button class="btn btn-secondary" id="closeDetailBtn" style="float:right;">Close</button></h3>
         <dl>
-          <dt>IMO Number</dt><dd>${v.imoNumber ?? '—'}${v.imoNumberPlausible === false ? ' <span class="badge dq">implausible</span>' : ''}</dd>
+          <dt>IMO Number</dt><dd>${v.imoNumber ?? '—'}${v.imoNumberPlausible === false ? ' <span class="badge badge-amber">implausible</span>' : ''}</dd>
           <dt>Flag</dt><dd>${v.flag ?? '—'}</dd>
           <dt>Vessel Type</dt><dd>${v.vesselType ?? '—'}</dd>
           <dt>Summer Deadweight/TEU</dt><dd>${v.summerDeadweightOrTeu ?? '—'}</dd>
@@ -245,21 +234,19 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          message.className = 'error';
+          message.className = 'alert alert-error show';
           message.textContent = data.error || 'Action failed.';
-          message.style.display = 'block';
           return;
         }
-        message.className = 'success';
+        message.className = 'alert alert-success show';
         const count = data.archived ?? data.restored ?? 0;
         message.textContent = `Done: ${count} vessel(s) ${activeTab === 'ACTIVE' ? 'removed and archived' : 'restored'}${data.skipped ? `, ${data.skipped} skipped (already in that state)` : ''}.`;
         selected.clear();
         updateActionButton();
         loadVessels();
       } catch {
-        message.className = 'error';
+        message.className = 'alert alert-error show';
         message.textContent = 'Could not reach the server.';
-        message.style.display = 'block';
       }
     });
 

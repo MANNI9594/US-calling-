@@ -165,7 +165,7 @@ Built:
 - `public/active-master.html` — the main view: tabbed Active/Archived, search (name + IMO), sortable-by-ETA table (reuses the existing `GET /api/vessels` sort logic from Phase 2), multi-select checkboxes with Select All / Clear Selection / Remove or Restore Selected (with a confirmation dialog stating the action is reversible), a `PAST ETD` badge sourced from existing open `DataQualityIssue` records, and a click-to-expand vessel detail panel (all permanent fields, current operational data, evidence count, open data-quality issues) using the existing `GET /api/vessels/:id` endpoint.
 - Unified navigation added across all five main pages (Active Master, Import, Update from US Calling List, Evidence Review), and login/setup now redirect to Active Master as the natural home page instead of the Import page.
 
-**Verified:** 58/58 tests passing, no regressions. No new pure-logic unit tests were added this phase — the archive/restore endpoints are thin, low-risk status transitions built entirely from already-tested pieces (audit logging, transaction pattern), and the table page itself is a UI composition of already-tested API endpoints rather than new business logic. **Not yet tested live** — next action: user opens `/active-master.html`, confirms the real 49 vessels render correctly sorted by ETA, tries selecting a couple and removing them, confirms they move to the Archived tab, then restores them back.
+**Verified live on Railway:** the real ~49-vessel fleet renders correctly, sorted by ETA. Confirmed working: search, the vessel detail panel, and — critically — a full remove → archive → restore round trip was tested by the user ("Done: 3 vessel(s) restored"). Also independently confirmed by inspection: PAST ETD badges correctly reflect today's date against each vessel's real ETD, and sorting correctly orders vessels chronologically even when their raw ETA strings are in different formats (some `DD-MM-YYYY` from US Calling List updates, some `DD.MM.YYYY` from the original Master import) — proof that sorting genuinely uses the parsed date, not a naive string comparison, exactly as designed.
 
 **Known issues / open questions:**
 - No permanent-delete action exists yet (by design — deferred until there's a real need, per the spec's own caution against over-building).
@@ -173,3 +173,40 @@ Built:
 - Search only covers vessel name and IMO (matching the existing `GET /api/vessels` capability) — filtering by status/port/flag etc. is not yet exposed in the UI even though the data supports it.
 
 **Next phase:** Phase 8 — Restore / Vessel Database (the dedicated archive-search screen and the "archived vessel found in a new US Calling List → one-click restore & update" convenience flow — note the underlying restore mechanics already exist from Phase 5/7, so this phase is primarily UI/detection work at this point) — or Phase 9 (XLSX Export), which is arguably the more commonly wanted remaining piece: turning the current database state back into a downloadable Master workbook.
+
+## Phase 9 — XLSX Export ✅ COMPLETE
+
+Built and verified via real mechanics testing (not just typechecking):
+
+- `imagePlacement.ts` — pure logic scaling an evidence image to fit Column L's space while preserving aspect ratio. Tested with real dimensions captured from actual evidence images (404×122, 510×83) plus degenerate-input and upscale-prevention cases. 5/5 tests passing.
+- `masterExportService.ts` — the core export writer:
+  - Loads the most recently completed Master Import's **original file** as a style template (column widths, header cell styles, a representative data-row style/height) — this is what makes the export "closely resemble the original workbook" without needing to mutate any file in place.
+  - **A real mechanical risk was found and resolved before writing this service**: manually testing ExcelJS's `spliceRows`/`rowCount` on the real reference workbook showed `rowCount` does not reliably shrink after row removal — a real bug risk for exports with fewer vessels than the original import. Verified fix: build a **brand-new worksheet** each time, using the original only as a style source, never mutating it. Directly re-tested this exact approach (3 synthetic vessels, fewer than the original 43) and confirmed via `eachRow` that exactly 3 data rows exist with zero stale leftovers — this is what the shipped code does.
+  - Vessels are pulled from the current Active Master only (archived vessels are excluded, matching what "Active Master" means), sorted by the same parsed-ETA rule as the Active Master table.
+  - **Sr. No. is renumbered 1..N** to match the export's ETA order (user's explicit decision).
+  - Each vessel's most recently `CONFIRMED` evidence image (if any) is embedded in Column L, sized via `imagePlacement.ts` (user's explicit decision on the multi-evidence tiebreaker).
+  - **Export validation runs automatically before the file is ever returned**, per the spec's explicit requirement: re-reads the generated buffer and checks header text, data row count, and embedded image count against what was intended. If validation fails, the function throws — no corrupt or incomplete file is ever handed to the user.
+  - The generated file is also saved to storage and recorded as a `MASTER_EXPORT` `ImportBatch`, so exports show up in history (reusing the existing `GET /api/import/batches?type=MASTER_EXPORT` endpoint — no new history UI needed).
+- `GET /api/export/master-xlsx` — generates and streams the file with correct `Content-Disposition`, filename `US_Calling_Master_YYYY-MM-DD.xlsx`.
+- A "⬇ Download Updated Master XLSX" button was added to `active-master.html`.
+
+**Known issues / open questions:**
+- **Not yet tested live.** This is the first phase where the full mechanics (style template loading + real evidence image embedding + validation) have not been run against the live Railway database, though every individual piece was independently verified: the underlying ExcelJS approach was proven against the real reference workbook (style cloning, image round-tripping, and the rebuild-fresh-worksheet fix all confirmed working with real file I/O in this sandbox), and `imagePlacement.ts` is unit-tested with real captured dimensions. Next action: user clicks "Download Updated Master XLSX" on the live app and opens the resulting file in Excel to confirm it looks right, has the right vessels/images, and matches the original formatting.
+- ExcelJS's TypeScript definitions are stricter than its actual runtime API for one-cell-anchor image placement (`{tl, ext}` without a `br` corner) — this is a real, intentional type-widening cast (`as unknown as ExcelJS.ImageRange`), not a hidden bug; the runtime behavior was independently verified correct via manual script before being used in the shipped code.
+- If an individual evidence image fails to load/read during export (corrupt file, storage hiccup), that one vessel's row is still written correctly, just without its picture — a single bad image cannot fail the whole export.
+
+## UI redesign + multi-user support (user-directed mid-session pivot)
+
+The user requested the interface be redesigned to match a reference product ("NavSight Pro") — dark navy table headers, blue primary-action accents, pill-shaped filter chips with colored dots, bordered secondary buttons, badges, and soft card shadows — plus support for a small team (up to 3 people) sharing one Master dataset.
+
+Built:
+- `public/styles.css` — a shared design system (CSS custom properties for the navy/blue/semantic color palette, Inter typeface, buttons, chips, badges, cards, the navy-header data-table style, form inputs, alerts, dropzones) linked by every page, replacing each page's previously-duplicated inline `<style>` block.
+- Every existing page (`active-master`, `import`, `us-calling-upload`, `evidence-review`, `add-vessel`, `login`, `setup`, `logout`) was rebuilt against this shared system — same JavaScript/business logic, new markup/classes only. No backend behavior changed as part of this pass.
+- Multi-user support: `POST /api/auth/users` (add a team member — requires an existing login, so it can never be reached by an unauthenticated outsider; the original `/setup` endpoint remains a one-shot bootstrap that locks itself after the first account) and `GET /api/auth/users` (list team members, no password hashes exposed). A new `TEAM_MEMBER_ADDED` audit event type was added to the schema.
+- `public/manage-team.html` — lists existing accounts, form to add a new one.
+- `public/logout.html` — performs the logout API call and redirects, so every page's nav can just be a plain link.
+- Nav bar ("Active Master / Import / Update from US Calling List / Evidence Review / Team / Logout") is now consistent across every authenticated page, restyled as a navy top bar matching the reference.
+
+Note: the team also has the option of simply sharing one login across all 3 people, since there is no per-user data partitioning — both approaches are supported; multi-account exists for teams that want per-person audit trail visibility (every vessel/evidence action already records `actorUserId`).
+
+**Not yet tested live** — next action: user redeploys and confirms the redesigned pages render correctly, and (if using multi-account) adds their teammates via `/manage-team.html`.

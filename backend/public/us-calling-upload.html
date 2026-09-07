@@ -4,94 +4,79 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>US Calling Master Manager — Update from US Calling List</title>
+<link rel="stylesheet" href="/styles.css" />
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 20px; color: #1a1a1a; }
-  nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 0.85rem; }
-  nav a { color: #0f172a; text-decoration: none; padding: 4px 0; border-bottom: 2px solid transparent; }
-  nav a:hover { border-bottom-color: #0f172a; }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
-  p.hint { color: #555; font-size: 0.9rem; margin-top: 0; }
-  #dropzone {
-    border: 2px dashed #94a3b8; border-radius: 10px; padding: 32px 20px; text-align: center;
-    color: #555; cursor: pointer; margin-top: 16px;
-  }
-  #dropzone.dragover { background: #f0f9ff; border-color: #0f172a; }
-  #dropzone input { display: none; }
-  button { padding: 10px 20px; background: #0f172a; color: white; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
-  button:disabled { background: #94a3b8; cursor: not-allowed; }
-  button.secondary { background: white; color: #0f172a; border: 1px solid #cbd5e1; }
-  .row { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
-  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.85rem; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
-  th { background: #f8fafc; position: sticky; top: 0; }
-  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 20px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
-  .badge.UPDATED { background: #dbeafe; color: #1e40af; }
-  .badge.UNCHANGED { background: #f1f5f9; color: #475569; }
-  .badge.NEW { background: #fef3c7; color: #92400e; }
-  .badge.ARCHIVED_FOUND { background: #ede9fe; color: #5b21b6; }
-  .badge.AMBIGUOUS { background: #fee2e2; color: #991b1b; }
-  #message { margin-top: 16px; padding: 12px; border-radius: 6px; display: none; font-size: 0.9rem; white-space: pre-wrap; }
-  #message.error { background: #fee2e2; color: #991b1b; display: block; }
+  #fileInfo { margin-top: 10px; font-size: 0.88rem; color: var(--text-600); }
+  table.summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
+  table.summary-table th, table.summary-table td { text-align: left; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+  table.summary-table th { color: var(--text-600); font-weight: 600; width: 60%; }
   .table-scroll { max-height: 420px; overflow-y: auto; }
-  label.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; margin-top: 12px; }
-  .warn-text { color: #b45309; font-size: 0.75rem; }
+  label.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; margin: 14px 0 0; font-weight: 500; color: var(--text-900); }
+  label.checkbox-row input { margin: 0; }
+  .warn-text { color: var(--amber-600); font-size: 0.75rem; }
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; }
 </style>
 </head>
 <body>
-  <nav>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
     <a href="/active-master.html">Active Master</a>
     <a href="/import.html">Import Master Workbook</a>
-    <a href="/us-calling-upload.html">Update from US Calling List</a>
+    <a href="/us-calling-upload.html" class="active">Update from US Calling List</a>
     <a href="/evidence-review.html">Evidence Review</a>
+    <a href="/manage-team.html">Team</a>
+    <a href="/logout.html">Logout</a>
   </nav>
 
-  <h1>Update from US Calling List</h1>
-  <p class="hint">
-    The daily workflow: upload the latest US Calling List, review what would change, then apply it.
-    This never touches permanent vessel profile fields — only ETA, ETD, Port, and voyage metadata.
-  </p>
-
-  <div id="dropzone">
-    <p><strong>Drop the US Calling List .xlsx file here</strong>, or click to choose a file.</p>
-    <input type="file" id="fileInput" accept=".xlsx" />
-  </div>
-
-  <div id="fileInfo" style="display:none; margin-top: 10px; font-size: 0.9rem;"></div>
-
-  <div class="row">
-    <button id="previewBtn" disabled>Preview Changes</button>
-  </div>
-
-  <div id="message"></div>
-
-  <div id="previewCard" class="card" style="display:none;">
-    <h3>Proposed Changes</h3>
-    <div id="counts"></div>
-
-    <label class="checkbox-row">
-      <input type="checkbox" id="restoreArchivedCheckbox" />
-      Also restore any archived vessels found in this list back to the Active Master
-    </label>
-
-    <p class="warn-text" style="margin-top: 8px;">
-      "Add to Database" opens in a new tab and creates the vessel immediately (independent of Apply Changes).
-      After adding one, re-run Preview to see it drop off the New/Unknown list before applying the rest.
-    </p>
-
-    <div class="table-scroll">
-      <table id="changeTable"></table>
+  <div class="page medium">
+    <div class="page-header">
+      <div>
+        <h1>Update from US Calling List</h1>
+        <p class="hint">The daily workflow: upload the latest list, review what would change, then apply it.</p>
+      </div>
     </div>
 
-    <div class="row">
-      <button id="commitBtn">Apply Changes</button>
-      <button id="cancelBtn" class="secondary">Cancel</button>
+    <div class="dropzone" id="dropzone">
+      <p><strong>Drop the US Calling List .xlsx file here</strong>, or click to choose a file.</p>
+      <input type="file" id="fileInput" accept=".xlsx" />
     </div>
-  </div>
 
-  <div id="resultCard" class="card" style="display:none;">
-    <h3>Update Result</h3>
-    <div id="resultSummary"></div>
+    <div id="fileInfo" style="display:none;"></div>
+
+    <div class="btn-row">
+      <button id="previewBtn" class="btn btn-primary" disabled>Preview Changes</button>
+    </div>
+
+    <div id="message" class="alert"></div>
+
+    <div id="previewCard" class="card accent-top" style="display:none;">
+      <h3>Proposed Changes</h3>
+      <div id="counts"></div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="restoreArchivedCheckbox" />
+        Also restore any archived vessels found in this list back to the Active Master
+      </label>
+
+      <p class="warn-text" style="margin-top: 8px;">
+        "Add to Database" opens in a new tab and creates the vessel immediately (independent of Apply Changes).
+        Re-run Preview afterward to see it drop off the New/Unknown list.
+      </p>
+
+      <div class="table-scroll table-wrap">
+        <table class="data-table" id="changeTable"></table>
+      </div>
+
+      <div class="btn-row">
+        <button id="commitBtn" class="btn btn-accent">Apply Changes</button>
+        <button id="cancelBtn" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+
+    <div id="resultCard" class="card accent-top" style="display:none;">
+      <h3>Update Result</h3>
+      <div id="resultSummary"></div>
+    </div>
   </div>
 
   <script>
@@ -117,12 +102,11 @@
     });
 
     function showMessage(text, type) {
-      message.className = type;
+      message.className = `alert alert-${type} show`;
       message.textContent = text;
-      message.style.display = 'block';
     }
     function clearMessage() {
-      message.style.display = 'none';
+      message.className = 'alert';
     }
 
     function setFile(file) {
@@ -185,7 +169,7 @@
     function renderPreview(p) {
       const c = p.counts;
       countsDiv.innerHTML = `
-        <table>
+        <table class="summary-table">
           <tr><th>Total rows</th><td>${p.rowCount}</td></tr>
           <tr><th>Updated</th><td>${c.updated}</td></tr>
           <tr><th>Unchanged</th><td>${c.unchanged}</td></tr>
@@ -196,12 +180,17 @@
         </table>
       `;
 
+      const badgeClassFor = (status) => ({
+        UPDATED: 'badge-blue', UNCHANGED: 'badge-neutral', NEW: 'badge-amber',
+        ARCHIVED_FOUND: 'badge-blue', AMBIGUOUS: 'badge-red',
+      }[status] || 'badge-neutral');
+
       changeTable.innerHTML = `
-        <tr><th>Vessel</th><th>Status</th><th>Old ETA</th><th>New ETA</th><th>Old ETD</th><th>New ETD</th><th>Old Port</th><th>New Port</th><th>Warnings</th><th></th></tr>
-        ${p.rows.map((r) => `
+        <thead><tr><th>Vessel</th><th>Status</th><th>Old ETA</th><th>New ETA</th><th>Old ETD</th><th>New ETD</th><th>Old Port</th><th>New Port</th><th>Warnings</th><th></th></tr></thead>
+        <tbody>${p.rows.map((r) => `
           <tr>
             <td>${r.vesselNameRaw}${r.matchedVesselName && r.matchedVesselName !== r.vesselNameRaw ? ' (' + r.matchedVesselName + ')' : ''}</td>
-            <td><span class="badge ${r.changeStatus}">${r.changeStatus}</span></td>
+            <td><span class="badge ${badgeClassFor(r.changeStatus)}">${r.changeStatus}</span></td>
             <td>${r.previousEta ?? '—'}</td>
             <td>${r.newEta ?? '—'}</td>
             <td>${r.previousEtd ?? '—'}</td>
@@ -211,7 +200,7 @@
             <td class="warn-text">${r.dateWarnings.join('; ')}</td>
             <td>${r.changeStatus === 'NEW' ? `<a href="${buildAddVesselUrl(r)}" target="_blank">Add to Database</a>` : ''}</td>
           </tr>
-        `).join('')}
+        `).join('')}</tbody>
       `;
 
       previewCard.style.display = 'block';
@@ -261,8 +250,8 @@
 
         const s = data.summary;
         resultSummary.innerHTML = `
-          <p><span class="badge UPDATED">Applied</span></p>
-          <table>
+          <p><span class="badge badge-green">Applied</span></p>
+          <table class="summary-table">
             <tr><th>Rows processed</th><td>${s.rowsProcessed}</td></tr>
             <tr><th>Vessels updated</th><td>${s.vesselsUpdated}</td></tr>
             <tr><th>Vessels unchanged</th><td>${s.vesselsUnchanged}</td></tr>

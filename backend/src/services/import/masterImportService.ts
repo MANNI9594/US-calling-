@@ -382,11 +382,106 @@ function asString(value: string | number | null | undefined): string | null {
   const str = String(value).trim();
   return str === '' ? null : str;
 }
-
 function mapServiceFees(value: string | number | null | undefined): 'YES' | 'NO' | 'NA' | 'UNKNOWN' {
   const str = asString(value)?.toUpperCase();
   if (str === 'YES' || str === 'Y') return 'YES';
   if (str === 'NO' || str === 'N') return 'NO';
   if (str === 'NA' || str === 'N/A') return 'NA';
   return 'UNKNOWN';
+}
+
+export interface BackfillSummary {
+  vesselsChecked: number;
+  vesselsUpdated: number;
+  fieldsBackfilled: number;
+}
+
+const BACKFILLABLE_FIELDS: Array<{ dbField: string; header: string }> = [
+  { dbField: 'flag', header: 'Flag' },
+  { dbField: 'vesselType', header: 'Vessel Type Bulk / Container / Tanker / LNG / Car Carrier' },
+  { dbField: 'summerDeadweightOrTeu', header: 'Summer Deadweight / TEU (for container ships)' },
+  { dbField: 'registeredOwnerPerCor', header: 'Registered Owners Name / Country as per Certificate of Registry' },
+  { dbField: 'registeredOwnerPerCsr', header: 'Registered Owners Name / Country as per CSR' },
+  { dbField: 'operatorNameInCofr', header: "Operator's Name in COFR" },
+  { dbField: 'bridgeLetter', header: 'Bridge Letter' },
+  { dbField: 'builtLocation', header: 'Built Location' },
+];
+
+/**
+ * Re-reads the most recently completed Master Import and fills in any
+ * permanent-profile field that's currently NULL on an already-existing
+ * vessel, using the source file's value for that field — but NEVER
+ * overwrites a field that already has a value, even if it differs from
+ * the file (that could be a legitimate manual correction, and this
+ * function has no way to know that).
+ *
+ * Built specifically to remediate a real, confirmed bug: a header
+ * apostrophe-character mismatch (see masterWorkbookReader.ts
+ * `normalizeHeaderText`) caused every vessel's Operator field to import as
+ * blank. Fixing the import code doesn't retroactively fix vessels already
+ * in the database — this does, safely, without needing to know which
+ * specific bug caused which specific gap. Only ever creates new values
+ * where none existed; never creates a new vessel, never touches evidence,
+ * never touches operational data.
+ */
+export async function backfillMissingPermanentFields(): Promise<BackfillSummary> {
+  const lastImport = await prisma.importBatch.findFirst({
+    where: { type: 'MASTER_IMPORT', status: 'COMPLETED' },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!lastImport || !lastImport.storageKey) {
+    throw new Error('No completed Master import found to backfill from.');
+  }
+
+  const fileBuffer = await storage.get(lastImport.storageKey);
+  const parsed = await readMasterWorkbook(fileBuffer);
+
+  const summary: BackfillSummary = { vesselsChecked: 0, vesselsUpdated: 0, fieldsBackfilled: 0 };
+
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    for (const row of parsed.rows) {
+      const vesselName = String(row.values['Vessel Name'] ?? '').trim();
+      if (!vesselName) continue;
+
+      const rawImo = row.values['IMO No'] as string | number | null;
+      const identity = resolveVesselIdentity(vesselName, rawImo);
+
+      const existing = await tx.vessel.findFirst({
+        where:
+          identity.lookupStrategy === 'IMO_THEN_NAME'
+            ? { OR: [{ imoNumber: identity.imoNumber as string }, { vesselNameNormalized: identity.vesselNameNormalized }] }
+            : { vesselNameNormalized: identity.vesselNameNormalized },
+      });
+      if (!existing) continue; // backfill only touches vessels that already exist
+
+      summary.vesselsChecked += 1;
+
+      const updateData: Record<string, string> = {};
+      for (const { dbField, header } of BACKFILLABLE_FIELDS) {
+        const currentValue = (existing as unknown as Record<string, unknown>)[dbField];
+        if (currentValue !== null && currentValue !== undefined && currentValue !== '') continue; // never overwrite
+
+        const fileValue = asString(row.values[header]);
+        if (fileValue !== null) {
+          updateData[dbField] = fileValue;
+        }
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.vessel.update({ where: { id: existing.id }, data: updateData });
+        summary.vesselsUpdated += 1;
+        summary.fieldsBackfilled += Object.keys(updateData).length;
+      }
+    }
+  });
+
+  await logAudit({
+    eventType: 'MANUAL_EDIT',
+    importBatchId: lastImport.id,
+    summary: `Backfilled ${summary.fieldsBackfilled} missing permanent field(s) across ${summary.vesselsUpdated} vessel(s) from the last Master import`,
+    detail: summary as unknown as Prisma.InputJsonValue,
+  });
+
+  return summary;
 }

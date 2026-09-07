@@ -57,4 +57,16 @@ maybeDescribe('readMasterWorkbook (against the real reference workbook)', () => 
     const row = result.rows.find((r) => r.values['Vessel Name'] === 'Athens C');
     expect(row?.values['ETD']).toBe('06.09.026');
   });
+
+  it('BUG REGRESSION: extracts the Operator field despite the real file using a curly apostrophe in its header ("Operator\u2019s Name in COFR") while the app looks up a straight one', async () => {
+    // Confirmed real bug: the header lookup key used a straight apostrophe
+    // (') but the actual reference workbook's header uses a typographic
+    // curly apostrophe ('), so every vessel's Operator field silently
+    // imported as blank. Headers are now normalized on read specifically
+    // to prevent this.
+    const buffer = readFileSync(path.resolve(REAL_WORKBOOK_PATH as string));
+    const result = await readMasterWorkbook(buffer);
+    const row = result.rows.find((r) => r.values['Vessel Name'] === 'Ocean Harvest');
+    expect(row?.values["Operator's Name in COFR"]).toBe('Confidence Shipping Inc.');
+  });
 });

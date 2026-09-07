@@ -6,7 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { env } from '../config/env';
 import { storage } from '../services/storage';
-import { previewMasterImport, commitMasterImport } from '../services/import/masterImportService';
+import { previewMasterImport, commitMasterImport, backfillMissingPermanentFields } from '../services/import/masterImportService';
 import { asyncHandler } from '../middleware/asyncHandler';
 
 export const importRouter = Router();
@@ -93,4 +93,15 @@ importRouter.get('/batches/:id', asyncHandler(async (req, res) => {
   const batch = await prisma.importBatch.findUnique({ where: { id: req.params.id } });
   if (!batch) throw new AppError(404, 'Import batch not found');
   res.json({ batch });
+}));
+
+/**
+ * One-time remediation: re-reads the last Master import and fills in any
+ * permanent field that's currently blank on an existing vessel — see
+ * masterImportService.ts for exactly why this exists and its safety
+ * guarantees (never overwrites a populated field, never creates vessels).
+ */
+importRouter.post('/backfill-missing-fields', asyncHandler(async (_req, res) => {
+  const summary = await backfillMissingPermanentFields();
+  res.json({ summary });
 }));

@@ -67,6 +67,17 @@
       <h3>Import History</h3>
       <div id="history">Loading…</div>
     </div>
+
+    <div class="card">
+      <h3>Backfill Missing Fields</h3>
+      <p class="hint">
+        If some vessels are missing a permanent field (e.g. Operator Name) that's actually present
+        in your Master workbook, this re-checks the last Master import and fills in any blank field —
+        it never overwrites a field that already has a value.
+      </p>
+      <button id="backfillBtn" class="btn btn-primary">Run Backfill</button>
+      <span id="backfillStatus" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-600);"></span>
+    </div>
   </div>
 
   <script>
@@ -253,6 +264,33 @@
     }
 
     loadHistory();
+
+    document.getElementById('backfillBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('backfillBtn');
+      const status = document.getElementById('backfillStatus');
+      btn.disabled = true;
+      status.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/import/backfill-missing-fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.error || 'Backfill failed.';
+          return;
+        }
+        const s = data.summary;
+        status.textContent = `Checked ${s.vesselsChecked} vessels, updated ${s.vesselsUpdated}, filled in ${s.fieldsBackfilled} field(s) total.`;
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>

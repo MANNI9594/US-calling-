@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
+import { timingSafeEqual } from 'crypto';
 import { prisma } from '../db/prisma';
 import { env } from '../config/env';
-import { hashPassword, verifyPassword, createSession, destroySession } from '../services/auth/authService';
+import { hashPassword, verifyPassword, createSession, destroySession, destroyAllSessionsForUser } from '../services/auth/authService';
 import { requireAuth, SESSION_COOKIE_NAME } from '../middleware/auth';
 import { logAudit } from '../services/audit/auditService';
 import { asyncHandler } from '../middleware/asyncHandler';
@@ -151,4 +152,141 @@ authRouter.get('/users', requireAuth, asyncHandler(async (_req, res) => {
     orderBy: { createdAt: 'asc' },
   });
   res.json({ users });
+}));
+
+/**
+ * Self-service password change — requires knowing the CURRENT password,
+ * so this alone doesn't help if someone is actually locked out (see the
+ * teammate-reset and emergency-recovery endpoints below for that case).
+ */
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(10, 'New password must be at least 10 characters'),
+});
+
+authRouter.post('/me/change-password', requireAuth, asyncHandler(async (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  const currentOk = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+  if (!currentOk) {
+    res.status(401).json({ error: 'Current password is incorrect' });
+    return;
+  }
+
+  const newHash = await hashPassword(parsed.data.newPassword);
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+
+  res.json({ ok: true });
+}));
+
+/**
+ * Lets any logged-in team member reset ANOTHER team member's password —
+ * no email verification step, by design: this is a small trusted team
+ * sharing one dataset, not a multi-tenant product with untrusted users.
+ * The target's email is used rather than an ID since that's what the Team
+ * page already displays and it's what a person would naturally type.
+ */
+const resetTeamMemberPasswordSchema = z.object({
+  email: z.string().email(),
+  newPassword: z.string().min(10, 'New password must be at least 10 characters'),
+});
+
+authRouter.post('/users/reset-password', requireAuth, asyncHandler(async (req, res) => {
+  const parsed = resetTeamMemberPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  const target = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  if (!target) {
+    res.status(404).json({ error: 'No user with that email' });
+    return;
+  }
+
+  const newHash = await hashPassword(parsed.data.newPassword);
+  await prisma.user.update({ where: { id: target.id }, data: { passwordHash: newHash } });
+  await destroyAllSessionsForUser(target.id); // force re-login everywhere with the new password
+
+  await logAudit({
+    eventType: 'MANUAL_EDIT',
+    actorUserId: req.userId,
+    summary: `${req.userEmail} reset the password for ${target.email}`,
+  });
+
+  res.json({ ok: true, email: target.email });
+}));
+
+/**
+ * Emergency account recovery — for when NOBODY can log in at all (the
+ * true lockout case). Deliberately unauthenticated (there's no session to
+ * require), so it's gated instead by a long random secret set as a
+ * deployment-time environment variable (ADMIN_RECOVERY_SECRET), known only
+ * to whoever deployed the app — never a user password, never stored in
+ * the database. If that variable isn't set, this endpoint always refuses;
+ * recovery is opt-in, not a default open door. Rate-limited hard since
+ * it's unauthenticated.
+ */
+const recoveryLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many recovery attempts. Please wait and try again.' },
+});
+
+const recoverySchema = z.object({
+  secret: z.string().min(1),
+  email: z.string().email(),
+  newPassword: z.string().min(10, 'New password must be at least 10 characters'),
+});
+
+authRouter.post('/recovery-reset', recoveryLimiter, asyncHandler(async (req, res) => {
+  if (!env.ADMIN_RECOVERY_SECRET) {
+    res.status(503).json({ error: 'Account recovery is not configured for this deployment. Set ADMIN_RECOVERY_SECRET to enable it.' });
+    return;
+  }
+
+  const parsed = recoverySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  const providedSecret = Buffer.from(parsed.data.secret);
+  const realSecret = Buffer.from(env.ADMIN_RECOVERY_SECRET);
+  const secretMatches =
+    providedSecret.length === realSecret.length && timingSafeEqual(providedSecret, realSecret);
+
+  if (!secretMatches) {
+    res.status(401).json({ error: 'Invalid recovery secret' });
+    return;
+  }
+
+  const target = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  if (!target) {
+    res.status(404).json({ error: 'No user with that email' });
+    return;
+  }
+
+  const newHash = await hashPassword(parsed.data.newPassword);
+  await prisma.user.update({ where: { id: target.id }, data: { passwordHash: newHash } });
+  await destroyAllSessionsForUser(target.id);
+
+  await logAudit({
+    eventType: 'MANUAL_EDIT',
+    summary: `${target.email}'s password was reset via emergency recovery`,
+  });
+
+  res.json({ ok: true, email: target.email });
 }));

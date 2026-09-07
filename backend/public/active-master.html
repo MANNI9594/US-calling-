@@ -12,6 +12,7 @@
   .vessel-link { color: var(--blue-700); cursor: pointer; font-weight: 600; text-decoration: none; }
   .vessel-link:hover { text-decoration: underline; }
   .date-warning { color: var(--amber-600); font-weight: 700; }
+td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
   .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
   #editModeBtn.on { background: var(--green-600); }
@@ -297,6 +298,8 @@
       if (field === 'serviceFeesApplicable') {
         const options = ['UNKNOWN', 'YES', 'NO', 'NA'];
         inputHtml = `<select>${options.map((o) => `<option value="${o}" ${o === currentValue ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+      } else if (field === 'etaRaw' || field === 'etdRaw') {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY \u2014 day first, e.g. 01-09-2026 = 1 September 2026" />`;
       } else {
         inputHtml = `<input type="text" value="${esc(currentValue)}" />`;
       }
@@ -308,8 +311,13 @@
       let saved = false;
       const save = async () => {
         if (saved) return;
-        saved = true;
         const newValue = inputEl.value;
+
+        if ((field === 'etaRaw' || field === 'etdRaw') && newValue && !/^\d{2}[-.]\d{2}[-.]\d{4}$/.test(newValue)) {
+          const proceed = confirm(`"${newValue}" doesn't look like DD-MM-YYYY. Save it exactly as typed anyway?`);
+          if (!proceed) { inputEl.focus(); return; }
+        }
+        saved = true;
 
         if (newValue === currentValue) {
           td.classList.remove('editing');

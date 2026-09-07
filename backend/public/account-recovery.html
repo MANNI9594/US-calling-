@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Account Recovery</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .auth-card { width: 420px; }
+  .auth-card h1 { font-size: 1.2rem; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <div class="card auth-card">
+    <h1>Emergency Account Recovery</h1>
+    <p class="text-muted" style="font-size: 0.85rem;">
+      Use this only if nobody can log in at all. Requires the recovery secret set on the
+      server (in the <code>ADMIN_RECOVERY_SECRET</code> environment variable) — not a user
+      password. If you don't know that secret, this page can't help you.
+    </p>
+
+    <form id="recoveryForm">
+      <label for="secret">Recovery secret</label>
+      <input type="password" id="secret" required style="width:100%;" />
+
+      <label for="email">Account email to reset</label>
+      <input type="email" id="email" required style="width:100%;" />
+
+      <label for="newPassword">New password (min. 10 characters)</label>
+      <input type="password" id="newPassword" required minlength="10" style="width:100%;" />
+
+      <div style="margin-top: 18px;">
+        <button type="submit" id="submitBtn" class="btn btn-accent" style="width:100%; justify-content:center;">Reset Password</button>
+      </div>
+    </form>
+
+    <div id="result" class="alert"></div>
+
+    <p class="text-muted" style="font-size: 0.8rem; margin-top: 14px;">
+      <a href="/login.html">Back to login</a>
+    </p>
+  </div>
+
+  <script>
+    const form = document.getElementById('recoveryForm');
+    const resultBox = document.getElementById('result');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Resetting...';
+      resultBox.className = 'alert';
+
+      try {
+        const res = await fetch('/api/auth/recovery-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            secret: document.getElementById('secret').value,
+            email: document.getElementById('email').value,
+            newPassword: document.getElementById('newPassword').value,
+          }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          resultBox.className = 'alert alert-success show';
+          resultBox.textContent = `Password reset for ${data.email}. You can log in now.`;
+          form.style.display = 'none';
+        } else {
+          resultBox.className = 'alert alert-error show';
+          resultBox.textContent = data.error || 'Recovery failed.';
+        }
+      } catch {
+        resultBox.className = 'alert alert-error show';
+        resultBox.textContent = 'Could not reach the server.';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Reset Password';
+      }
+    });
+  </script>
+</body>
+</html>

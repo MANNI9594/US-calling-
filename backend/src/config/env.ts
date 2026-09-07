@@ -28,6 +28,13 @@ const envSchema = z.object({
   STORAGE_S3_SECRET_ACCESS_KEY: z.string().optional(),
 
   MAX_UPLOAD_SIZE_MB: z.coerce.number().default(50),
+
+  // Emergency account recovery — a long random secret (NOT a user password)
+  // that lets someone reset a user's password when nobody can log in at
+  // all. Only known to whoever deploys the app (set as a Railway/Render
+  // env var). If unset, the recovery endpoint refuses to work at all —
+  // recovery is opt-in, not a default open door.
+  ADMIN_RECOVERY_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

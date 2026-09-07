@@ -30,6 +30,22 @@
     </div>
 
     <fieldset>
+      <legend>Change my password</legend>
+      <form id="changePasswordForm">
+        <label for="currentPassword">Current password</label>
+        <input type="password" id="currentPassword" required autocomplete="current-password" />
+
+        <label for="newOwnPassword">New password (min. 10 characters)</label>
+        <input type="password" id="newOwnPassword" required minlength="10" autocomplete="new-password" />
+
+        <div style="margin-top: 16px;">
+          <button type="submit" id="changePasswordBtn" class="btn btn-primary">Change My Password</button>
+        </div>
+      </form>
+      <div id="changePasswordResult" class="alert"></div>
+    </fieldset>
+
+    <fieldset>
       <legend>Add a team member</legend>
       <form id="addForm">
         <label for="email">Email</label>
@@ -44,6 +60,10 @@
       </form>
       <div id="result" class="alert"></div>
     </fieldset>
+
+    <p class="hint" style="margin-top: 18px;">
+      Locked out and nobody can log in at all? <a href="/account-recovery.html">Emergency account recovery →</a>
+    </p>
   </div>
 
   <script>
@@ -58,16 +78,86 @@
       if (!data.users) { table.innerHTML = '<tr><td>Could not load team list.</td></tr>'; return; }
 
       table.innerHTML = `
-        <thead><tr><th>Email</th><th>Added</th><th>Last Login</th></tr></thead>
+        <thead><tr><th>Email</th><th>Added</th><th>Last Login</th><th></th></tr></thead>
         <tbody>${data.users.map((u) => `
           <tr>
             <td>${u.email}</td>
             <td>${new Date(u.createdAt).toLocaleDateString()}</td>
             <td>${u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never'}</td>
+            <td><button class="btn btn-secondary reset-btn" data-email="${u.email}">Reset Password</button></td>
           </tr>
         `).join('')}</tbody>
       `;
+
+      table.querySelectorAll('.reset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => resetTeammatePassword(btn.dataset.email));
+      });
     }
+
+    async function resetTeammatePassword(email) {
+      const newPassword = prompt(`New temporary password for ${email} (min. 10 characters):`);
+      if (!newPassword) return;
+      if (newPassword.length < 10) {
+        alert('Password must be at least 10 characters.');
+        return;
+      }
+      if (!confirm(`Reset ${email}'s password? They'll be logged out everywhere and need this new password to log back in.`)) return;
+
+      try {
+        const res = await fetch('/api/auth/users/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email, newPassword }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(`Password reset for ${email}. Share the new password with them directly.`);
+        } else {
+          alert(data.error || 'Could not reset password.');
+        }
+      } catch {
+        alert('Could not reach the server.');
+      }
+    }
+
+    const changeForm = document.getElementById('changePasswordForm');
+    const changeResultBox = document.getElementById('changePasswordResult');
+    const changeBtn = document.getElementById('changePasswordBtn');
+
+    changeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      changeBtn.disabled = true;
+      changeBtn.textContent = 'Changing...';
+      changeResultBox.className = 'alert';
+
+      try {
+        const res = await fetch('/api/auth/me/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            currentPassword: document.getElementById('currentPassword').value,
+            newPassword: document.getElementById('newOwnPassword').value,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          changeResultBox.className = 'alert alert-success show';
+          changeResultBox.textContent = 'Password changed successfully.';
+          changeForm.reset();
+        } else {
+          changeResultBox.className = 'alert alert-error show';
+          changeResultBox.textContent = data.error || 'Could not change password.';
+        }
+      } catch {
+        changeResultBox.className = 'alert alert-error show';
+        changeResultBox.textContent = 'Could not reach the server.';
+      } finally {
+        changeBtn.disabled = false;
+        changeBtn.textContent = 'Change My Password';
+      }
+    });
 
     const form = document.getElementById('addForm');
     const resultBox = document.getElementById('result');

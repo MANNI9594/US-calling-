@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { formatAsCallingListDate } from '../../utils/parseOperationalDate';
 
 /**
  * Reads a US Calling List upload — the recurring, day-to-day file, distinct
@@ -90,6 +91,19 @@ export async function readUsCallingList(fileBuffer: Buffer): Promise<UsCallingLi
       let value: string | null;
       if (raw === null || raw === undefined) {
         value = null;
+      } else if (raw instanceof Date) {
+        // Excel silently converts a typed-in date like "10-09-2026" into a
+        // real date-typed cell rather than text — this is common for
+        // hand-edited or freshly-typed US Calling Lists, unlike the Master
+        // workbook (which stores ETA/ETD as plain text). The date itself is
+        // unambiguous here (Excel's internal serial-date representation has
+        // no DD/MM ambiguity), so formatting it back to the expected
+        // DD-MM-YYYY string is not "guessing" — it's the correct, faithful
+        // representation of what the cell actually contains. Falling back
+        // to JS's default Date#toString() here previously produced garbage
+        // like "Wed Sep 09 2026 00:00:00 GMT+0000 (...)" that then failed
+        // downstream date-format validation — a real bug, not a data issue.
+        value = formatAsCallingListDate(raw);
       } else if (typeof raw === 'object' && 'result' in (raw as object)) {
         value = String((raw as { result?: string | number }).result ?? '') || null;
       } else {

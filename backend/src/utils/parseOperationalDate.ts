@@ -66,3 +66,11 @@ export function formatAsMasterDate(date: Date): string {
   const yyyy = date.getUTCFullYear();
   return `${dd}.${mm}.${yyyy}`;
 }
+
+/** Formats a Date to the US Calling List's DD-MM-YYYY convention. */
+export function formatAsCallingListDate(date: Date): string {
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = date.getUTCFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}

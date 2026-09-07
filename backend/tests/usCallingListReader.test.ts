@@ -73,4 +73,28 @@ describe('readUsCallingList (real xlsx round-trip, spec example data)', () => {
     expect(result.rows[0].vesselName).toBe('Test Vessel');
     expect(result.rows[0].arrivalPort).toBe('Houston');
   });
+
+  it('BUG REGRESSION: formats a native Excel date-typed cell as DD-MM-YYYY, not JS Date#toString() garbage', async () => {
+    // Reproduces a real bug found during live testing: typing "10-09-2026"
+    // into Excel by hand causes Excel to auto-convert the cell to a real
+    // date type rather than text (unlike the Master workbook, which stores
+    // dates as plain text). Before the fix, this produced values like
+    // "Wed Sep 09 2026 00:00:00 GMT+0000 (Coordinated Universal Time)"
+    // which then failed downstream date-format validation entirely.
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Sheet1');
+    sheet.addRow(['Vessel Name', 'ETA', 'ETD']);
+    const row = sheet.addRow(['Test Vessel', new Date(Date.UTC(2026, 8, 9)), new Date(Date.UTC(2026, 8, 13))]);
+    row.getCell(2).numFmt = 'dd-mm-yyyy';
+    row.getCell(3).numFmt = 'dd-mm-yyyy';
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const result = await readUsCallingList(buffer);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].etaRaw).toBe('09-09-2026');
+    expect(result.rows[0].etdRaw).toBe('13-09-2026');
+    // Explicitly assert the old buggy output never reappears
+    expect(result.rows[0].etaRaw).not.toContain('GMT');
+    expect(result.rows[0].etaRaw).not.toContain('Coordinated Universal Time');
+  });
 });

@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { formatAsMasterDate } from '../../utils/parseOperationalDate';
 
 /**
  * READ-ONLY inspection of a Master workbook. This is deliberately scoped to
@@ -75,6 +76,13 @@ export async function readMasterWorkbook(fileBuffer: Buffer): Promise<MasterWork
       let value: string | number | null;
       if (raw === null || raw === undefined) {
         value = null;
+      } else if (raw instanceof Date) {
+        // Same real-world issue as the US Calling List reader: a
+        // date-typed cell (rather than the Master's usual plain-text
+        // dates) must be formatted back to DD.MM.YYYY, not stringified
+        // via JS's default Date#toString(). See usCallingListReader.ts for
+        // the full explanation and the bug this fixes.
+        value = formatAsMasterDate(raw);
       } else if (typeof raw === 'object' && 'result' in (raw as object)) {
         // formula cell — use cached result, never re-derive
         value = (raw as { result?: string | number }).result ?? null;

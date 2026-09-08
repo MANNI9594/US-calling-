@@ -47,6 +47,26 @@
   #confirmCard table.summary-table th { color: var(--text-600); font-weight: 600; width: 65%; }
   #confirmCard .removal-list { max-height: 140px; overflow-y: auto; font-size: 0.85rem; margin: 8px 0; padding-left: 20px; color: var(--red-600); }
   #confirmCard .btn-row { display: flex; gap: 10px; margin-top: 18px; }
+
+  #addVesselOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.55);
+    z-index: 300; align-items: center; justify-content: center; padding: 24px;
+  }
+  #addVesselOverlay.show { display: flex; }
+  #addVesselCard {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-md);
+    max-width: 460px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 24px 26px; position: relative;
+  }
+  #addVesselCard h3 { margin-top: 0; padding-right: 30px; }
+  #addVesselCloseBtn {
+    position: absolute; top: 16px; right: 16px; background: none; border: none;
+    font-size: 1.3rem; cursor: pointer; color: var(--text-600); line-height: 1; padding: 4px 8px;
+  }
+  #addVesselCard .btn-row { display: flex; gap: 10px; margin-top: 18px; }
+
+  .date-filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-600); }
+  .date-filter-row label { font-weight: 600; }
+  .date-filter-row input[type="date"] { padding: 6px 8px; font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -86,6 +106,18 @@
 
     <div class="chip-row" id="filterChips" style="margin-top: 16px;"></div>
 
+    <div class="date-filter-row" style="margin-top: 10px;">
+      <label for="etaFromFilter">ETA from</label>
+      <input type="date" id="etaFromFilter" />
+      <label for="etaToFilter">to</label>
+      <input type="date" id="etaToFilter" />
+      <label for="etdFromFilter" style="margin-left: 14px;">ETD from</label>
+      <input type="date" id="etdFromFilter" />
+      <label for="etdToFilter">to</label>
+      <input type="date" id="etdToFilter" />
+      <button id="clearDateFiltersBtn" class="btn btn-secondary" style="font-size: 0.78rem; padding: 5px 10px;">Clear Dates</button>
+    </div>
+
     <div class="controls-row">
       <input type="text" id="searchInput" placeholder="Search vessel name..." style="width: 220px;" />
 
@@ -122,6 +154,76 @@
     <div id="confirmCard">
       <h3>Apply to VECS List?</h3>
       <div id="confirmBody">Loading…</div>
+    </div>
+  </div>
+
+  <div id="addVesselOverlay">
+    <div id="addVesselCard">
+      <button id="addVesselCloseBtn" aria-label="Close">✕</button>
+      <h3>Add Vessel to US Calling List</h3>
+      <form id="addVesselForm">
+        <label for="newVesselName">Vessel Name *</label>
+        <input type="text" id="newVesselName" required />
+
+        <label for="newVoyageType">Voyage Type</label>
+        <select id="newVoyageType">
+          <option value="">—</option>
+          <option value="Foreign to US">Foreign to US</option>
+          <option value="US to US">US to US</option>
+        </select>
+
+        <label for="newTransactionType">Transaction Type</label>
+        <select id="newTransactionType">
+          <option value="">—</option>
+          <option value="Initial">Initial</option>
+          <option value="Update">Update</option>
+        </select>
+
+        <label for="newSendTo">Send To</label>
+        <select id="newSendTo">
+          <option value="">—</option>
+          <option value="NVMC">NVMC</option>
+          <option value="Review">Review</option>
+        </select>
+
+        <label for="newPort">Port</label>
+        <input type="text" id="newPort" list="portSuggestions" placeholder="Type or pick a port" />
+        <datalist id="portSuggestions">
+          <option value="Houston">
+          <option value="New Orleans">
+          <option value="Lake Charles">
+          <option value="Port Arthur">
+          <option value="Corpus Christi">
+          <option value="Beaumont">
+          <option value="Mobile">
+          <option value="Long Beach">
+          <option value="Los Angeles">
+          <option value="Norfolk">
+          <option value="Savannah">
+          <option value="Jacksonville">
+          <option value="Tacoma">
+          <option value="Vancouver">
+          <option value="San Juan">
+          <option value="Newport News">
+          <option value="Sabine">
+          <option value="Limetree Bay">
+          <option value="Cape Henery Pilot Station">
+          <option value="Howland Hook">
+          <option value="Bristol">
+          <option value="Ferndale">
+        </datalist>
+
+        <label for="newEta">ETA</label>
+        <input type="date" id="newEta" />
+
+        <label for="newEtd">ETD</label>
+        <input type="date" id="newEtd" />
+
+        <div class="btn-row">
+          <button type="submit" class="btn btn-accent">Add Vessel</button>
+          <button type="button" class="btn btn-secondary" id="addVesselCancelBtn">Cancel</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -172,6 +274,16 @@
       applyFilterAndSort();
     });
 
+    ['etaFromFilter', 'etaToFilter', 'etdFromFilter', 'etdToFilter'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', applyFilterAndSort);
+    });
+    document.getElementById('clearDateFiltersBtn').addEventListener('click', () => {
+      ['etaFromFilter', 'etaToFilter', 'etdFromFilter', 'etdToFilter'].forEach((id) => {
+        document.getElementById(id).value = '';
+      });
+      applyFilterAndSort();
+    });
+
     async function loadEntries() {
       const table = document.getElementById('entriesTable');
       table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
@@ -210,6 +322,16 @@
       } else if (activeFilter === 'NO_ETA') {
         list = list.filter((e) => !e.etaRaw || !e.etdRaw || getTime(e.etaRaw) === null || getTime(e.etdRaw) === null);
       }
+
+      const etaFrom = document.getElementById('etaFromFilter').value;
+      const etaTo = document.getElementById('etaToFilter').value;
+      const etdFrom = document.getElementById('etdFromFilter').value;
+      const etdTo = document.getElementById('etdToFilter').value;
+
+      if (etaFrom) { const t = new Date(etaFrom + 'T00:00:00Z').getTime(); list = list.filter((e) => { const m = getTime(e.etaRaw); return m !== null && m >= t; }); }
+      if (etaTo) { const t = new Date(etaTo + 'T23:59:59Z').getTime(); list = list.filter((e) => { const m = getTime(e.etaRaw); return m !== null && m <= t; }); }
+      if (etdFrom) { const t = new Date(etdFrom + 'T00:00:00Z').getTime(); list = list.filter((e) => { const m = getTime(e.etdRaw); return m !== null && m >= t; }); }
+      if (etdTo) { const t = new Date(etdTo + 'T23:59:59Z').getTime(); list = list.filter((e) => { const m = getTime(e.etdRaw); return m !== null && m <= t; }); }
 
       const [field, dir] = sortKey.split('-');
       const mul = dir === 'desc' ? -1 : 1;
@@ -386,17 +508,48 @@
       updateDeleteButton();
     });
 
-    document.getElementById('addRowBtn').addEventListener('click', async () => {
-      const vesselName = prompt('Vessel name for the new entry:');
-      if (!vesselName) return;
+    document.getElementById('addRowBtn').addEventListener('click', () => {
+      document.getElementById('addVesselForm').reset();
+      document.getElementById('addVesselOverlay').classList.add('show');
+      document.getElementById('newVesselName').focus();
+    });
+    document.getElementById('addVesselCancelBtn').addEventListener('click', () => {
+      document.getElementById('addVesselOverlay').classList.remove('show');
+    });
+    document.getElementById('addVesselOverlay').addEventListener('click', (e) => {
+      if (e.target.id === 'addVesselOverlay') document.getElementById('addVesselOverlay').classList.remove('show');
+    });
+
+    function isoToDdMmYyyy(iso) {
+      if (!iso) return undefined;
+      const [yyyy, mm, dd] = iso.split('-');
+      return `${dd}-${mm}-${yyyy}`;
+    }
+
+    document.getElementById('addVesselForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        vesselName: document.getElementById('newVesselName').value,
+        voyageType: document.getElementById('newVoyageType').value || undefined,
+        transactionType: document.getElementById('newTransactionType').value || undefined,
+        sendTo: document.getElementById('newSendTo').value || undefined,
+        arrivalPort: document.getElementById('newPort').value || undefined,
+        etaRaw: isoToDdMmYyyy(document.getElementById('newEta').value),
+        etdRaw: isoToDdMmYyyy(document.getElementById('newEtd').value),
+      };
       const res = await fetch('/api/us-calling-entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ vesselName }),
+        body: JSON.stringify(body),
       });
-      if (res.ok) loadEntries();
-      else alert('Could not add entry.');
+      if (res.ok) {
+        document.getElementById('addVesselOverlay').classList.remove('show');
+        loadEntries();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Could not add entry.');
+      }
     });
 
     document.getElementById('searchInput').addEventListener('input', () => {

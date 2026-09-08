@@ -347,3 +347,11 @@ Per user request: the old "Update from US Calling List" page (`us-calling-upload
 ## US Calling List: Edit Mode consistency fix
 
 User noticed the US Calling List page had double-click-to-edit built in but no visible "Edit Mode" toggle — unlike VECS List, where editing only activates after explicitly turning Edit Mode on. This was a genuine inconsistency (and made editing look entirely absent on the new page). Fixed by adding the identical Edit Mode button, hint text, and gating logic as VECS List — the two pages now behave identically.
+
+## US Calling List: proper Add Vessel modal + manual date range filters
+
+**Add Vessel modal** replaces the bare `prompt()`-based flow with a real form covering every column: Vessel Name, Voyage Type (dropdown: Foreign to US / US to US), Transaction Type (dropdown: Initial / Update), Send To (dropdown: NVMC / Review — matching the actual values seen in the user's real Excel data validation dropdowns), Port (a suggest-as-you-type list of common ports seen across the user's real data, but still freely typable since new ports will keep appearing — a strict dropdown would have been actively harmful here), and native date pickers for ETA/ETD. The date pickers are a deliberate choice beyond what was asked: converting a browser-native date picker to the app's DD-MM-YYYY convention on save sidesteps the entire day/month ambiguity class of bug investigated earlier this session, for any vessel added through this form specifically.
+
+**Manual ETA/ETD date range filters** — four date inputs (ETA from/to, ETD from/to) that combine with the existing filter chips and sort, so a specific window (e.g. "show me everything departing between these two dates") can be queried directly rather than only via the automatic Reminder filter.
+
+**Not yet tested live** — next actions: (1) add a vessel through the new modal and confirm all fields save correctly, especially that the date-picker-to-DD-MM-YYYY conversion produces the right stored value, (2) set an ETD date range and confirm the table narrows to matching entries.

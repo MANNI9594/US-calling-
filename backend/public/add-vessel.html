@@ -16,7 +16,7 @@
 <body>
   <nav class="topbar">
     <span class="brand">US Calling <span>Master</span></span>
-    <a href="/active-master.html">Active Master</a>
+    <a href="/active-master.html">VECS List</a>
     <a href="/import.html">Import Master Workbook</a>
     <a href="/us-calling-upload.html">Update from US Calling List</a>
     <a href="/evidence-review.html">Evidence Review</a>
@@ -171,7 +171,7 @@
     }
 
     async function restoreVessel(vesselId, vesselName) {
-      if (!confirm(`Restore ${vesselName} to the Active Master${pendingOp.etaRaw ? ' with the pending ETA/ETD/Port shown above' : ''}?`)) return;
+      if (!confirm(`Restore ${vesselName} to the VECS List${pendingOp.etaRaw ? ' with the pending ETA/ETD/Port shown above' : ''}?`)) return;
 
       const resultBox = document.getElementById('restoreResult');
       resultBox.className = 'alert';
@@ -194,7 +194,7 @@
 
         if (res.ok) {
           resultBox.className = 'alert alert-success show';
-          resultBox.textContent = `${vesselName} restored to the Active Master with its complete existing profile${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged)` : ''}.`;
+          resultBox.textContent = `${vesselName} restored to the VECS List with its complete existing profile${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged)` : ''}.`;
           document.getElementById('searchResults').innerHTML = '';
           document.getElementById('manualFormSection').style.display = 'none';
         } else {
@@ -259,7 +259,7 @@
 
         if (res.ok) {
           resultBox.className = 'alert alert-success show';
-          resultBox.textContent = `${data.vessel.vesselName} added to the Active Master${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged — check its profile)` : ''}.`;
+          resultBox.textContent = `${data.vessel.vesselName} added to the VECS List${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged — check its profile)` : ''}.`;
           form.style.display = 'none';
         } else {
           resultBox.className = 'alert alert-error show';

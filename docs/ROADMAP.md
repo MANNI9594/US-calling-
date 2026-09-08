@@ -313,3 +313,11 @@ Built using Server-Sent Events (SSE) rather than full WebSockets — simpler and
 ## Flag/Past ETD badge tooltips
 
 Small addition per user request: hovering over a row's "Past ETD" badge or "N flag(s)" badge now shows a native browser tooltip listing the actual underlying data-quality issue messages (e.g. "ETD BEFORE ETA: ETD is before ETA for this calling record"), so the reason for the flag is visible without opening the vessel detail modal. Implemented as a plain HTML `title` attribute — no new dependencies, works everywhere.
+
+## Bug found and fixed: stale data-quality flags surviving a correction
+
+User noticed a "1 flag(s)" tooltip reading "ETD is before ETA" on a vessel whose displayed ETA/ETD were actually in correct chronological order. Root cause: the manual live-edit endpoint (`PATCH /api/vessels/:id/operational`) already cleared stale OPEN date-quality flags before re-checking a corrected value, but that same step was missing from the **batch** update path (`runCommitTransaction` in `usCallingImportService.ts`, shared by every US Calling List file upload and the new "Apply to VECS List" feature). A flag raised by an earlier, genuinely-wrong upload would stay open forever even after a later, correct upload fixed the actual dates, because the fix only ever checked the vessel's *current* calling record — the stale flag was still attached to a *previous*, now-superseded one.
+
+Fixed by adding the same stale-flag-clearing step (scoped by `vesselId`, not the specific calling record, since the flag may be attached to a historical one) to the shared batch commit path — confirmed via code review that both the normal update branch and the archived-vessel-restore branch flow through this same fixed code.
+
+**Known limitation, disclosed rather than silently left:** this fix prevents *new* stale flags going forward; it does not retroactively clean up flags already stuck in a live database from before this fix. The user was offered a one-time cleanup endpoint and declined, opting to manually re-save the handful of affected vessels via the live-edit feature instead (which already correctly clears a flag the moment the field is touched).

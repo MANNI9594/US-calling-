@@ -436,3 +436,38 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+// ----------------------------------------------------------------------------
+// US CALLING LIST ENTRY — the persistent, live-editable working list of
+// recurring US Calling List data. This is DELIBERATELY a separate table
+// from Vessel/VesselCallingRecord (the "VECS List" / Master data): this is
+// a staging area the user edits directly day-to-day, distinct from the
+// permanent vessel database. "Apply to VECS List" is what pushes these
+// rows into the real Vessel/VesselCallingRecord records, going through the
+// exact same matching + data-quality logic as a file upload always has —
+// this table just replaces "re-upload a file every time" with "edit rows
+// that are always there."
+// ----------------------------------------------------------------------------
+
+model UsCallingListEntry {
+  id String @id @default(uuid())
+
+  vesselName           String @map("vessel_name")
+  vesselNameNormalized String @map("vessel_name_normalized") // for matching against Vessel at apply-time, same normalization rules
+
+  voyageType      String? @map("voyage_type")
+  transactionType String? @map("transaction_type")
+  sendTo          String? @map("send_to")
+  arrivalPort     String? @map("arrival_port")
+
+  etaRaw    String?   @map("eta_raw") // exactly as entered, e.g. "06-09-2026"
+  etaParsed DateTime? @map("eta_parsed")
+  etdRaw    String?   @map("etd_raw")
+  etdParsed DateTime? @map("etd_parsed")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([vesselNameNormalized])
+  @@map("us_calling_list_entries")
+}

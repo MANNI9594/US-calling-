@@ -220,7 +220,7 @@ export async function commitUsCallingListUpdate(options: CommitOptions): Promise
   }
 }
 
-async function runCommitTransaction(
+export async function runCommitTransaction(
   rows: UsCallingListRow[],
   batchId: string,
   restoreArchivedVessels: boolean,
@@ -314,6 +314,20 @@ async function runCommitTransaction(
             source: 'US_CALLING_LIST_UPLOAD',
             sourceImportBatchId: batchId,
           },
+        });
+
+        // BUG FIX: clear stale OPEN date-quality flags before re-checking.
+        // These flags are tied to the vessel's PREVIOUS calling record
+        // (now non-current) — without this, a flag raised by an earlier,
+        // wrong upload would sit open forever even after a later, correct
+        // upload fixes the actual dates. The live-edit endpoint
+        // (vessels.routes.ts PATCH /:id/operational) already had this
+        // step; this batch path did not, which is exactly the bug a user
+        // found in real use (a resolved ETD-before-ETA flag persisting
+        // after the dates were already corrected by a newer upload).
+        await tx.dataQualityIssue.updateMany({
+          where: { vesselId, status: 'OPEN', issueType: { in: ['INVALID_DATE_FORMAT', 'ETD_BEFORE_ETA', 'PAST_ETD'] } },
+          data: { status: 'RESOLVED', resolvedAt: new Date() },
         });
 
         const { parsed: etaParsed } = await checkAndRecordDate(tx, {

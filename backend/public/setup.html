@@ -59,7 +59,7 @@
 
         if (res.ok) {
           resultBox.className = 'alert alert-success show';
-          resultBox.textContent = `Account created for ${data.email}. Redirecting you to the Active Master...`;
+          resultBox.textContent = `Account created for ${data.email}. Redirecting you to the VECS List...`;
           form.style.display = 'none';
           setTimeout(() => { window.location.href = '/active-master.html'; }, 1500);
         } else {

@@ -377,6 +377,11 @@
     function openDqCount(v) {
       return (v.dataQualityIssues || []).length;
     }
+    function dqTooltipText(v) {
+      return (v.dataQualityIssues || [])
+        .map((i) => `${i.issueType.replace(/_/g, ' ')}: ${i.message}`)
+        .join('\n');
+    }
     function dateCell(raw, isPastDue) {
       const { text, warning } = formatDateForDisplay(raw);
       if (warning) return `<span class="date-warning" title="Could not parse this date">⚠ ${text}</span>`;
@@ -457,7 +462,7 @@
           <tr class="${past ? 'flagged' : ''}" data-vessel-id="${v.id}">
             <td><input type="checkbox" class="rowCheck" data-id="${v.id}" ${checked} /></td>
             <td data-colkey="sr">${idx + 1}</td>
-            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${past ? '<span class="badge badge-red">Past ETD</span>' : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber">${openDqCount(v)} flag(s)</span>` : ''}</td>
+            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${past ? `<span class="badge badge-red" title="${esc(dqTooltipText(v))}">Past ETD</span>` : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber" title="${esc(dqTooltipText(v))}">${openDqCount(v)} flag(s)</span>` : ''}</td>
             ${editableTd('imoNumber', v.imoNumber, v.imoNumber ?? '—')}
             ${editableTd('flag', v.flag, v.flag ?? '—')}
             ${editableTd('vesselType', v.vesselType, v.vesselType ?? '—')}

@@ -309,3 +309,7 @@ Built using Server-Sent Events (SSE) rather than full WebSockets — simpler and
 **ETD text turns red when overdue**, not just the "Past ETD" badge next to the vessel name — directly requested, since the badge alone was easy to miss when scanning the ETD column specifically. Computed client-side by comparing each vessel's parsed ETD against the current time.
 
 **Not yet tested live** — next actions: (1) confirm the navy header now looks clearly blue rather than black, (2) toggle a few columns off/on and confirm the table updates correctly, (3) try each filter chip and sort option, (4) confirm an overdue ETD renders in red text.
+
+## Flag/Past ETD badge tooltips
+
+Small addition per user request: hovering over a row's "Past ETD" badge or "N flag(s)" badge now shows a native browser tooltip listing the actual underlying data-quality issue messages (e.g. "ETD BEFORE ETA: ETD is before ETA for this calling record"), so the reason for the flag is visible without opening the vessel detail modal. Implemented as a plain HTML `title` attribute — no new dependencies, works everywhere.

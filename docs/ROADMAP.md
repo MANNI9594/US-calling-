@@ -343,3 +343,7 @@ Built the actual frontend for the persistent US Calling List backend from earlie
 ## Navigation simplified: old file-upload page removed from nav
 
 Per user request: the old "Update from US Calling List" page (`us-calling-upload.html`, direct upload-and-commit flow) is now redundant — the new US Calling List page (import file → live-edit → "Apply to VECS List" with confirmation) fully supersedes it. Removed that nav link from every page. Added a single "⇄ Update from US Calling List" button on VECS List's header, linking directly to `/us-calling-list.html`. The old page's file remains on disk (unlinked, harmless) rather than being deleted, in case a simple fallback is ever needed — but it's no longer surfaced anywhere in the UI.
+
+## US Calling List: Edit Mode consistency fix
+
+User noticed the US Calling List page had double-click-to-edit built in but no visible "Edit Mode" toggle — unlike VECS List, where editing only activates after explicitly turning Edit Mode on. This was a genuine inconsistency (and made editing look entirely absent on the new page). Fixed by adding the identical Edit Mode button, hint text, and gating logic as VECS List — the two pages now behave identically.

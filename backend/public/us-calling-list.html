@@ -11,6 +11,10 @@
   .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
   .date-warning { color: var(--amber-600); font-weight: 700; }
   .date-past-due { color: var(--red-600); font-weight: 700; }
+  #editModeBtn.on { background: var(--green-600); }
+  #editModeBtn.on:hover { background: #15803d; }
+  .edit-hint { font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 12px; border-radius: var(--radius-sm); display: none; }
+  .edit-hint.show { display: inline-block; }
   td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
   .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -95,10 +99,15 @@
       </select>
 
       <button id="addRowBtn" class="btn btn-primary">+ Add Vessel</button>
+      <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
       <button id="deleteSelectedBtn" class="btn btn-danger" disabled>Delete Selected</button>
       <span class="selection-count" id="selectionCount"></span>
+    </div>
+
+    <div class="controls-row" style="margin-top: -6px;">
+      <span class="edit-hint" id="editHint">Double-click any cell to edit it. Press Enter or click away to save.</span>
       <span id="liveSyncStatus" style="font-size: 0.78rem; color: var(--text-400); margin-left: auto;">○ Connecting…</span>
     </div>
 
@@ -123,9 +132,19 @@
     let searchTimer = null;
     let activeFilter = 'ALL';
     let sortKey = 'eta-asc';
+    let editMode = false;
 
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
       if (!res.ok) window.location.href = '/login.html';
+    });
+
+    document.getElementById('editModeBtn').addEventListener('click', () => {
+      editMode = !editMode;
+      const btn = document.getElementById('editModeBtn');
+      btn.textContent = `✎ Edit Mode: ${editMode ? 'On' : 'Off'}`;
+      btn.classList.toggle('on', editMode);
+      document.getElementById('editHint').classList.toggle('show', editMode);
+      renderTable();
     });
 
     const FILTERS = [
@@ -275,9 +294,11 @@
       table.querySelectorAll('.delete-row-btn').forEach((btn) => {
         btn.addEventListener('click', () => deleteEntries([btn.dataset.id]));
       });
-      table.querySelectorAll('td.editable').forEach((td) => {
-        td.addEventListener('dblclick', () => startEdit(td));
-      });
+      if (editMode) {
+        table.querySelectorAll('td.editable').forEach((td) => {
+          td.addEventListener('dblclick', () => startEdit(td));
+        });
+      }
     }
 
     function updateDeleteButton() {

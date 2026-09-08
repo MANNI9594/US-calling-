@@ -7,6 +7,7 @@ import { AppError } from '../middleware/errorHandler';
 import { env } from '../config/env';
 import { storage } from '../services/storage';
 import { previewUsCallingListUpdate, commitUsCallingListUpdate } from '../services/uscalling/usCallingImportService';
+import { broadcast } from '../services/realtime/eventBus';
 
 export const usCallingRouter = Router();
 usCallingRouter.use(requireAuth);
@@ -53,4 +54,5 @@ usCallingRouter.post('/commit', asyncHandler(async (req, res) => {
 
   const { batchId, summary } = await commitUsCallingListUpdate(parsed.data);
   res.status(201).json({ batchId, summary });
+  broadcast('vessels-changed');
 }));

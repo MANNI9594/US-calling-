@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { broadcast } from '../services/realtime/eventBus';
 import { env } from '../config/env';
 import { storage } from '../services/storage';
 import { previewMasterImport, commitMasterImport, backfillMissingPermanentFields } from '../services/import/masterImportService';
@@ -65,6 +66,7 @@ importRouter.post('/master-workbook/commit', asyncHandler(async (req, res) => {
 
   const { batchId, summary } = await commitMasterImport(parsed.data.storageKey, parsed.data.originalFilename);
   res.status(201).json({ batchId, summary });
+  broadcast('vessels-changed');
 }));
 
 const historyQuerySchema = z.object({
@@ -104,4 +106,5 @@ importRouter.get('/batches/:id', asyncHandler(async (req, res) => {
 importRouter.post('/backfill-missing-fields', asyncHandler(async (_req, res) => {
   const summary = await backfillMissingPermanentFields();
   res.json({ summary });
+  broadcast('vessels-changed');
 }));

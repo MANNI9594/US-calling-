@@ -12,7 +12,8 @@
   .vessel-link { color: var(--blue-700); cursor: pointer; font-weight: 600; text-decoration: none; }
   .vessel-link:hover { text-decoration: underline; }
   .date-warning { color: var(--amber-600); font-weight: 700; }
-td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
+  .date-past-due { color: var(--red-600); font-weight: 700; }
+  td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
   .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
   #editModeBtn.on { background: var(--green-600); }
@@ -51,6 +52,18 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
 
   #lightbox { display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.9); z-index: 250; align-items: center; justify-content: center; cursor: zoom-out; }
   #lightbox img { max-width: 90%; max-height: 90%; border-radius: var(--radius); }
+
+  .dropdown-wrap { position: relative; }
+  .dropdown-panel {
+    display: none; position: absolute; top: 110%; left: 0; z-index: 50;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-md); padding: 10px 14px; min-width: 220px; max-height: 320px; overflow-y: auto;
+  }
+  .dropdown-panel.show { display: block; }
+  .dropdown-panel label { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 0.85rem; margin: 6px 0; color: var(--text-900); cursor: pointer; }
+  .dropdown-panel .panel-actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .dropdown-panel .panel-actions button { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
+  select#sortSelect { font-size: 0.85rem; padding: 8px 10px; }
 </style>
 </head>
 <body>
@@ -68,7 +81,7 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
     <div class="page-header">
       <div>
         <h1>Active Master</h1>
-        <p class="hint">Sorted by ETA (earliest first). Dates shown as DD-MM-YYYY. Scroll horizontally/vertically for the full Master sheet.</p>
+        <p class="hint">Dates shown as DD-MM-YYYY. Scroll horizontally/vertically for the full Master sheet.</p>
       </div>
       <div class="header-actions">
         <a href="/add-vessel.html" class="btn btn-primary">+ Add Vessel</a>
@@ -80,12 +93,36 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
     <div class="chip-row" id="tabs"></div>
 
     <div class="controls-row">
-      <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." style="width: 260px;" />
+      <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." style="width: 220px;" />
+
+      <div class="chip-row" id="filterChips"></div>
+
+      <select id="sortSelect">
+        <option value="eta-asc">Sort: ETA (earliest first)</option>
+        <option value="eta-desc">Sort: ETA (latest first)</option>
+        <option value="etd-asc">Sort: ETD (earliest first)</option>
+        <option value="etd-desc">Sort: ETD (latest first)</option>
+        <option value="name-asc">Sort: Vessel Name (A-Z)</option>
+        <option value="name-desc">Sort: Vessel Name (Z-A)</option>
+        <option value="imo-asc">Sort: IMO Number</option>
+      </select>
+
+      <div class="dropdown-wrap">
+        <button id="columnsBtn" class="btn btn-secondary">☰ Columns</button>
+        <div id="columnsPanel" class="dropdown-panel"></div>
+      </div>
+
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
       <button id="actionBtn" class="btn btn-danger" disabled>Remove Selected</button>
+      <button id="undoBtn" class="btn btn-secondary" disabled title="Undo your last edit (this session only)">↶ Undo</button>
+      <button id="redoBtn" class="btn btn-secondary" disabled title="Redo (this session only)">↷ Redo</button>
       <span class="selection-count" id="selectionCount"></span>
+    </div>
+
+    <div class="controls-row" style="margin-top: -6px;">
       <span class="edit-hint" id="editHint">Double-click any cell (except Vessel Name and Evidence) to edit it. Press Enter or click away to save.</span>
+      <span id="liveSyncStatus" style="font-size: 0.78rem; color: var(--text-400); margin-left: auto;">○ Connecting…</span>
     </div>
 
     <div id="message" class="alert"></div>
@@ -106,10 +143,123 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
 
   <script>
     let activeTab = 'ACTIVE';
-    let vessels = [];
+    let vessels = [];       // full fetched set for the current tab/search
+    let displayVessels = []; // after client-side filter + sort
     let selected = new Set();
     let searchTimer = null;
     let editMode = false;
+    let activeFilter = 'ALL'; // ALL | PAST_ETD | NO_EVIDENCE | HAS_FLAGS
+    let sortKey = 'eta-asc';
+
+    // --- Column visibility (persisted per-browser via localStorage — this
+    // is a real deployed app, not a Claude artifact, so localStorage is
+    // fine here; it's just a personal display preference, nothing sensitive) ---
+    const ALL_COLUMNS = [
+      { key: 'sr', label: 'Sr.' },
+      { key: 'imoNumber', label: 'IMO No' },
+      { key: 'flag', label: 'Flag' },
+      { key: 'vesselType', label: 'Vessel Type' },
+      { key: 'summerDeadweightOrTeu', label: 'Summer DWT/TEU' },
+      { key: 'ballastOrLoaded', label: 'Ballast/Loaded' },
+      { key: 'registeredOwnerPerCor', label: 'Reg. Owner (CoR)' },
+      { key: 'registeredOwnerPerCsr', label: 'Reg. Owner (CSR)' },
+      { key: 'operatorNameInCofr', label: 'Operator (COFR)' },
+      { key: 'bridgeLetter', label: 'Bridge Letter' },
+      { key: 'evidence', label: 'Evidence' },
+      { key: 'builtLocation', label: 'Built Location' },
+      { key: 'serviceFeesApplicable', label: 'Service Fees' },
+      { key: 'arrivalPort', label: 'Arrival Port' },
+      { key: 'etaRaw', label: 'ETA' },
+      { key: 'etdRaw', label: 'ETD' },
+    ];
+    // Vessel Name and the row checkbox are always shown — they're needed to
+    // identify and select a row, so they're not offered as hideable.
+    let hiddenColumns = new Set();
+    try {
+      hiddenColumns = new Set(JSON.parse(localStorage.getItem('activeMasterHiddenColumns') || '[]'));
+    } catch { hiddenColumns = new Set(); }
+
+    function saveHiddenColumns() {
+      try { localStorage.setItem('activeMasterHiddenColumns', JSON.stringify(Array.from(hiddenColumns))); } catch {}
+    }
+
+    function applyColumnVisibility() {
+      ALL_COLUMNS.forEach(({ key }) => {
+        const hidden = hiddenColumns.has(key);
+        document.querySelectorAll(`[data-colkey="${key}"]`).forEach((el) => {
+          el.style.display = hidden ? 'none' : '';
+        });
+      });
+    }
+
+    function renderColumnsPanel() {
+      const panel = document.getElementById('columnsPanel');
+      panel.innerHTML = ALL_COLUMNS.map(({ key, label }) => `
+        <label><input type="checkbox" data-colkey-toggle="${key}" ${hiddenColumns.has(key) ? '' : 'checked'} /> ${label}</label>
+      `).join('') + `
+        <div class="panel-actions">
+          <button class="btn btn-secondary" id="showAllColsBtn" type="button">Show All</button>
+          <button class="btn btn-secondary" id="hideExtraColsBtn" type="button">Name+ETA+ETD Only</button>
+        </div>
+      `;
+      panel.querySelectorAll('[data-colkey-toggle]').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          const key = cb.dataset.colkeyToggle;
+          if (cb.checked) hiddenColumns.delete(key); else hiddenColumns.add(key);
+          saveHiddenColumns();
+          applyColumnVisibility();
+        });
+      });
+      document.getElementById('showAllColsBtn').addEventListener('click', () => {
+        hiddenColumns = new Set();
+        saveHiddenColumns();
+        applyColumnVisibility();
+        renderColumnsPanel();
+      });
+      document.getElementById('hideExtraColsBtn').addEventListener('click', () => {
+        hiddenColumns = new Set(ALL_COLUMNS.map((c) => c.key).filter((k) => k !== 'etaRaw' && k !== 'etdRaw'));
+        saveHiddenColumns();
+        applyColumnVisibility();
+        renderColumnsPanel();
+      });
+    }
+
+    document.getElementById('columnsBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('columnsPanel').classList.toggle('show');
+    });
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('columnsPanel');
+      if (!panel.contains(e.target) && e.target.id !== 'columnsBtn') panel.classList.remove('show');
+    });
+
+    // --- Filters (client-side, applied on top of the tab + search fetch) ---
+    const FILTERS = [
+      { key: 'ALL', label: 'All Vessels', dot: 'blue' },
+      { key: 'PAST_ETD', label: 'Past ETD', dot: 'red' },
+      { key: 'NO_EVIDENCE', label: 'No Evidence', dot: 'amber' },
+      { key: 'HAS_FLAGS', label: 'Has Flags', dot: 'amber' },
+    ];
+
+    function renderFilterChips() {
+      const div = document.getElementById('filterChips');
+      div.innerHTML = FILTERS.map((f) => `
+        <div class="chip ${activeFilter === f.key ? 'active' : ''}" data-key="${f.key}"><span class="dot ${f.dot}"></span>${f.label}</div>
+      `).join('');
+      div.querySelectorAll('.chip').forEach((el) => {
+        el.addEventListener('click', () => {
+          activeFilter = el.dataset.key;
+          renderFilterChips();
+          applyFilterAndSort();
+        });
+      });
+    }
+
+    // Session-local undo/redo — only reverts YOUR own edits made in this
+    // browser tab this session, never a server-side global rollback.
+    const MAX_HISTORY = 50;
+    let undoStack = [];
+    let redoStack = [];
 
     const FIELD_ENDPOINT = {
       imoNumber: 'vessel', flag: 'vessel', vesselType: 'vessel', summerDeadweightOrTeu: 'vessel',
@@ -117,6 +267,55 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
       bridgeLetter: 'vessel', builtLocation: 'vessel', serviceFeesApplicable: 'vessel',
       ballastOrLoaded: 'operational', arrivalPort: 'operational', etaRaw: 'operational', etdRaw: 'operational',
     };
+
+    function updateUndoRedoButtons() {
+      document.getElementById('undoBtn').disabled = undoStack.length === 0;
+      document.getElementById('redoBtn').disabled = redoStack.length === 0;
+    }
+
+    async function applyFieldChange(vesselId, field, value) {
+      const endpoint = FIELD_ENDPOINT[field] === 'operational'
+        ? `/api/vessels/${vesselId}/operational`
+        : `/api/vessels/${vesselId}`;
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ [field]: value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not save change.');
+    }
+
+    document.getElementById('undoBtn').addEventListener('click', async () => {
+      const entry = undoStack.pop();
+      if (!entry) return;
+      try {
+        await applyFieldChange(entry.vesselId, entry.field, entry.oldValue);
+        redoStack.push(entry);
+        if (redoStack.length > MAX_HISTORY) redoStack.shift();
+        await loadVessels();
+      } catch (err) {
+        alert('Could not undo: ' + (err.message || 'unknown error'));
+        undoStack.push(entry);
+      }
+      updateUndoRedoButtons();
+    });
+
+    document.getElementById('redoBtn').addEventListener('click', async () => {
+      const entry = redoStack.pop();
+      if (!entry) return;
+      try {
+        await applyFieldChange(entry.vesselId, entry.field, entry.newValue);
+        undoStack.push(entry);
+        if (undoStack.length > MAX_HISTORY) undoStack.shift();
+        await loadVessels();
+      } catch (err) {
+        alert('Could not redo: ' + (err.message || 'unknown error'));
+        redoStack.push(entry);
+      }
+      updateUndoRedoButtons();
+    });
 
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
       if (!res.ok) window.location.href = '/login.html';
@@ -169,7 +368,7 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
       const res = await fetch(`/api/vessels?${params.toString()}`, { credentials: 'include' });
       const data = await res.json();
       vessels = data.vessels || [];
-      renderTable();
+      applyFilterAndSort();
     }
 
     function hasPastEtd(v) {
@@ -178,29 +377,77 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
     function openDqCount(v) {
       return (v.dataQualityIssues || []).length;
     }
-    function dateCell(raw) {
+    function dateCell(raw, isPastDue) {
       const { text, warning } = formatDateForDisplay(raw);
-      return warning ? `<span class="date-warning" title="Could not parse this date">⚠ ${text}</span>` : text;
+      if (warning) return `<span class="date-warning" title="Could not parse this date">⚠ ${text}</span>`;
+      if (isPastDue) return `<span class="date-past-due">${text}</span>`;
+      return text;
     }
     function esc(v) {
       return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
     }
 
+    function getEtaTime(v) {
+      const cr = (v.callingRecords || [])[0];
+      return cr && cr.etaParsed ? new Date(cr.etaParsed).getTime() : Number.POSITIVE_INFINITY;
+    }
+    function getEtdTime(v) {
+      const cr = (v.callingRecords || [])[0];
+      return cr && cr.etdParsed ? new Date(cr.etdParsed).getTime() : Number.POSITIVE_INFINITY;
+    }
+
+    function applyFilterAndSort() {
+      let list = vessels.slice();
+
+      if (activeFilter === 'PAST_ETD') {
+        list = list.filter(hasPastEtd);
+      } else if (activeFilter === 'NO_EVIDENCE') {
+        list = list.filter((v) => !(v.evidence || []).length);
+      } else if (activeFilter === 'HAS_FLAGS') {
+        list = list.filter((v) => openDqCount(v) > 0);
+      }
+
+      const [field, dir] = sortKey.split('-');
+      const mul = dir === 'desc' ? -1 : 1;
+      list.sort((a, b) => {
+        let av, bv;
+        if (field === 'eta') { av = getEtaTime(a); bv = getEtaTime(b); }
+        else if (field === 'etd') { av = getEtdTime(a); bv = getEtdTime(b); }
+        else if (field === 'name') { av = a.vesselName.toLowerCase(); bv = b.vesselName.toLowerCase(); }
+        else if (field === 'imo') { av = a.imoNumber || ''; bv = b.imoNumber || ''; }
+        if (av < bv) return -1 * mul;
+        if (av > bv) return 1 * mul;
+        return 0;
+      });
+
+      displayVessels = list;
+      renderTable();
+    }
+
+    document.getElementById('sortSelect').addEventListener('change', (e) => {
+      sortKey = e.target.value;
+      applyFilterAndSort();
+    });
+
     function editableTd(field, rawValue, displayValue) {
-      return `<td class="editable" data-field="${field}" data-value="${esc(rawValue)}">${displayValue ?? '—'}</td>`;
+      return `<td class="editable" data-field="${field}" data-colkey="${field}" data-value="${esc(rawValue)}">${displayValue ?? '—'}</td>`;
     }
 
     function renderTable() {
       const table = document.getElementById('masterTable');
-      if (vessels.length === 0) {
+      if (displayVessels.length === 0) {
         table.innerHTML = '<tr><td class="empty-state">No vessels found.</td></tr>';
         return;
       }
 
-      const rows = vessels.map((v, idx) => {
+      const now = Date.now();
+
+      const rows = displayVessels.map((v, idx) => {
         const cr = (v.callingRecords || [])[0] || {};
         const checked = selected.has(v.id) ? 'checked' : '';
         const past = hasPastEtd(v);
+        const etdTime = getEtdTime(v);
+        const etdIsPastDue = etdTime !== Infinity && etdTime < now;
         const bestEvidence = (v.evidence || []).find((e) => e.reviewStatus === 'CONFIRMED') || (v.evidence || [])[0];
         const evidenceCell = bestEvidence
           ? `<img class="ev-thumb" src="/api/evidence/${bestEvidence.id}/image" data-full="/api/evidence/${bestEvidence.id}/image" loading="lazy" />`
@@ -209,7 +456,7 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
         return `
           <tr class="${past ? 'flagged' : ''}" data-vessel-id="${v.id}">
             <td><input type="checkbox" class="rowCheck" data-id="${v.id}" ${checked} /></td>
-            <td>${idx + 1}</td>
+            <td data-colkey="sr">${idx + 1}</td>
             <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${past ? '<span class="badge badge-red">Past ETD</span>' : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber">${openDqCount(v)} flag(s)</span>` : ''}</td>
             ${editableTd('imoNumber', v.imoNumber, v.imoNumber ?? '—')}
             ${editableTd('flag', v.flag, v.flag ?? '—')}
@@ -220,12 +467,12 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
             ${editableTd('registeredOwnerPerCsr', v.registeredOwnerPerCsr, v.registeredOwnerPerCsr ?? '—')}
             ${editableTd('operatorNameInCofr', v.operatorNameInCofr, v.operatorNameInCofr ?? '—')}
             ${editableTd('bridgeLetter', v.bridgeLetter, v.bridgeLetter ?? '—')}
-            <td>${evidenceCell}</td>
+            <td data-colkey="evidence">${evidenceCell}</td>
             ${editableTd('builtLocation', v.builtLocation, v.builtLocation ?? '—')}
             ${editableTd('serviceFeesApplicable', v.serviceFeesApplicable, v.serviceFeesApplicable ?? '—')}
             ${editableTd('arrivalPort', cr.arrivalPort, cr.arrivalPort ?? '—')}
-            ${editableTd('etaRaw', cr.etaRaw, dateCell(cr.etaRaw))}
-            ${editableTd('etdRaw', cr.etdRaw, dateCell(cr.etdRaw))}
+            ${editableTd('etaRaw', cr.etaRaw, dateCell(cr.etaRaw, false))}
+            ${editableTd('etdRaw', cr.etdRaw, dateCell(cr.etdRaw, etdIsPastDue))}
           </tr>
         `;
       }).join('');
@@ -234,23 +481,23 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
         <thead>
           <tr>
             <th style="width:32px;"></th>
-            <th>Sr.</th>
+            <th data-colkey="sr">Sr.</th>
             <th>Vessel Name</th>
-            <th>IMO No</th>
-            <th>Flag</th>
-            <th>Vessel Type</th>
-            <th>Summer DWT/TEU</th>
-            <th>Ballast/Loaded</th>
-            <th>Reg. Owner (CoR)</th>
-            <th>Reg. Owner (CSR)</th>
-            <th>Operator (COFR)</th>
-            <th>Bridge Letter</th>
-            <th>Evidence</th>
-            <th>Built Location</th>
-            <th>Service Fees</th>
-            <th>Arrival Port</th>
-            <th>ETA</th>
-            <th>ETD</th>
+            <th data-colkey="imoNumber">IMO No</th>
+            <th data-colkey="flag">Flag</th>
+            <th data-colkey="vesselType">Vessel Type</th>
+            <th data-colkey="summerDeadweightOrTeu">Summer DWT/TEU</th>
+            <th data-colkey="ballastOrLoaded">Ballast/Loaded</th>
+            <th data-colkey="registeredOwnerPerCor">Reg. Owner (CoR)</th>
+            <th data-colkey="registeredOwnerPerCsr">Reg. Owner (CSR)</th>
+            <th data-colkey="operatorNameInCofr">Operator (COFR)</th>
+            <th data-colkey="bridgeLetter">Bridge Letter</th>
+            <th data-colkey="evidence">Evidence</th>
+            <th data-colkey="builtLocation">Built Location</th>
+            <th data-colkey="serviceFeesApplicable">Service Fees</th>
+            <th data-colkey="arrivalPort">Arrival Port</th>
+            <th data-colkey="etaRaw">ETA</th>
+            <th data-colkey="etdRaw">ETD</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -278,6 +525,8 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
           td.addEventListener('dblclick', () => startEdit(td));
         });
       }
+
+      applyColumnVisibility();
     }
 
     document.getElementById('lightbox').addEventListener('click', () => {
@@ -292,14 +541,23 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
       const vesselId = row.dataset.vesselId;
 
       td.classList.add('editing');
+      isEditingNow = true;
       const originalHtml = td.innerHTML;
+
+      function stopEditingAndCheckPending() {
+        isEditingNow = false;
+        if (pendingRefresh) {
+          pendingRefresh = false;
+          loadVessels();
+        }
+      }
 
       let inputHtml;
       if (field === 'serviceFeesApplicable') {
         const options = ['UNKNOWN', 'YES', 'NO', 'NA'];
         inputHtml = `<select>${options.map((o) => `<option value="${o}" ${o === currentValue ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
       } else if (field === 'etaRaw' || field === 'etdRaw') {
-        inputHtml = `<input type="text" value="${esc(currentValue)}" placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY \u2014 day first, e.g. 01-09-2026 = 1 September 2026" />`;
+        inputHtml = `<input type="text" value="${esc(currentValue)}" placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first, e.g. 01-09-2026 = 1 September 2026" />`;
       } else {
         inputHtml = `<input type="text" value="${esc(currentValue)}" />`;
       }
@@ -322,39 +580,35 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
         if (newValue === currentValue) {
           td.classList.remove('editing');
           td.innerHTML = originalHtml;
+          stopEditingAndCheckPending();
           return;
         }
 
-        const endpoint = FIELD_ENDPOINT[field] === 'operational'
-          ? `/api/vessels/${vesselId}/operational`
-          : `/api/vessels/${vesselId}`;
-
         try {
-          const res = await fetch(endpoint, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ [field]: newValue }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error || 'Could not save change.');
-            td.classList.remove('editing');
-            td.innerHTML = originalHtml;
-            return;
-          }
+          await applyFieldChange(vesselId, field, newValue);
+          undoStack.push({ vesselId, field, oldValue: currentValue, newValue });
+          if (undoStack.length > MAX_HISTORY) undoStack.shift();
+          redoStack = [];
+          updateUndoRedoButtons();
+          isEditingNow = false;
           await loadVessels();
-        } catch {
-          alert('Could not reach the server.');
+        } catch (err) {
+          alert(err.message || 'Could not reach the server.');
           td.classList.remove('editing');
           td.innerHTML = originalHtml;
+          stopEditingAndCheckPending();
         }
       };
 
       inputEl.addEventListener('blur', save);
       inputEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); inputEl.blur(); }
-        if (e.key === 'Escape') { saved = true; td.classList.remove('editing'); td.innerHTML = originalHtml; }
+        if (e.key === 'Escape') {
+          saved = true;
+          td.classList.remove('editing');
+          td.innerHTML = originalHtml;
+          stopEditingAndCheckPending();
+        }
       });
     }
 
@@ -383,7 +637,7 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
           <dt>Bridge Letter</dt><dd>${v.bridgeLetter ?? '—'}</dd>
           <dt>Built Location</dt><dd>${v.builtLocation ?? '—'}</dd>
           <dt>Service Fees</dt><dd>${v.serviceFeesApplicable ?? '—'}</dd>
-          <dt>Current Port / ETA / ETD</dt><dd>${cr.arrivalPort ?? '—'} / ${dateCell(cr.etaRaw)} / ${dateCell(cr.etdRaw)}</dd>
+          <dt>Current Port / ETA / ETD</dt><dd>${cr.arrivalPort ?? '—'} / ${dateCell(cr.etaRaw, false)} / ${dateCell(cr.etdRaw, false)}</dd>
           <dt>Voyage / Transaction / Send To</dt><dd>${cr.voyageType ?? '—'} / ${cr.transactionType ?? '—'} / ${cr.sendTo ?? '—'}</dd>
           <dt>Evidence records</dt><dd>${(v.evidence || []).length} (<a href="/evidence-review.html" target="_blank">review</a>)</dd>
           <dt>Open data quality issues</dt><dd>${(v.dataQualityIssues || []).map((i) => `${i.issueType}: ${i.message}`).join('<br>') || 'None'}</dd>
@@ -402,7 +656,7 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
     });
 
     document.getElementById('selectAllBtn').addEventListener('click', () => {
-      vessels.forEach((v) => selected.add(v.id));
+      displayVessels.forEach((v) => selected.add(v.id));
       renderTable();
       updateActionButton();
     });
@@ -447,7 +701,38 @@ td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
     });
 
     renderTabs();
+    renderFilterChips();
+    renderColumnsPanel();
     loadVessels();
+
+    // --- Live sync: Server-Sent Events push a 'vessels-changed' message
+    // whenever anyone (including you, in another tab) mutates vessel data.
+    let isEditingNow = false;
+    let pendingRefresh = false;
+
+    function connectLiveSync() {
+      const statusEl = document.getElementById('liveSyncStatus');
+      const source = new EventSource('/api/events/stream');
+
+      source.addEventListener('connected', () => {
+        statusEl.textContent = '● Live';
+        statusEl.style.color = 'var(--green-600)';
+      });
+
+      source.addEventListener('vessels-changed', () => {
+        if (isEditingNow) {
+          pendingRefresh = true;
+          return;
+        }
+        loadVessels();
+      });
+
+      source.onerror = () => {
+        statusEl.textContent = '○ Reconnecting…';
+        statusEl.style.color = 'var(--text-400)';
+      };
+    }
+    connectLiveSync();
   </script>
 </body>
 </html>

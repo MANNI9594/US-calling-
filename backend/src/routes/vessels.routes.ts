@@ -8,6 +8,7 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveVesselIdentity } from '../services/import/vesselIdentity';
 import { checkAndRecordDate, checkEtdBeforeEta, checkPastEtd, checkImoPlausibility } from '../services/dataQuality/dataQualityService';
 import { logAudit } from '../services/audit/auditService';
+import { broadcast } from '../services/realtime/eventBus';
 
 export const vesselsRouter = Router();
 vesselsRouter.use(requireAuth);
@@ -226,6 +227,7 @@ vesselsRouter.post('/', asyncHandler(async (req, res) => {
   });
 
   res.status(201).json({ vessel: result.vessel, dataQualityIssuesRaised: result.dataQualityIssuesRaised });
+  broadcast('vessels-changed');
 }));
 
 const bulkVesselIdsSchema = z.object({ vesselIds: z.array(z.string().uuid()).min(1) });
@@ -267,6 +269,7 @@ vesselsRouter.post('/archive', asyncHandler(async (req, res) => {
   });
 
   res.json(result);
+  broadcast('vessels-changed');
 }));
 
 /**
@@ -304,6 +307,7 @@ vesselsRouter.post('/restore', asyncHandler(async (req, res) => {
   });
 
   res.json(result);
+  broadcast('vessels-changed');
 }));
 
 const restoreAndUpdateSchema = z.object({
@@ -405,6 +409,7 @@ vesselsRouter.post('/:id/restore-and-update', asyncHandler(async (req, res) => {
   });
 
   res.json({ vessel: { ...vessel, status: 'ACTIVE' }, dataQualityIssuesRaised });
+  broadcast('vessels-changed');
 }));
 
 /**
@@ -513,6 +518,7 @@ vesselsRouter.patch('/:id', asyncHandler(async (req, res) => {
   });
 
   res.json({ vessel: updated });
+  broadcast('vessels-changed');
 }));
 
 /**
@@ -599,4 +605,5 @@ vesselsRouter.patch('/:id/operational', asyncHandler(async (req, res) => {
   });
 
   res.json({ callingRecord: result.record });
+  broadcast('vessels-changed');
 }));

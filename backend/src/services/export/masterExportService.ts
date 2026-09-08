@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import { imageSize } from 'image-size';
 import { prisma } from '../../db/prisma';
 import { storage } from '../storage';
-import { computeImagePlacement } from './imagePlacement';
+import { computeImagePlacement, columnWidthToPixels, rowHeightToPixels } from './imagePlacement';
 import { logAudit } from '../audit/auditService';
 import type { Prisma } from '@prisma/client';
 
@@ -212,6 +212,16 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
 
   let imagesPlaced = 0;
 
+  // Real pixel bounds for the evidence image column, derived from the
+  // ACTUAL template column width / row height — not a hardcoded guess.
+  // A hardcoded 460×95px estimate was tried first and confirmed wrong in
+  // real use (images visibly overflowed into the next column when opened
+  // in Excel, since Excel does not clip a positioned image to its anchor
+  // column). Column L is index 11 (0-indexed) in MASTER_HEADERS.
+  const evidenceColumnWidth = template.columnWidths[11];
+  const maxImageWidthPx = evidenceColumnWidth !== undefined ? columnWidthToPixels(evidenceColumnWidth) : undefined;
+  const maxImageHeightPx = template.dataRowHeight !== undefined ? rowHeightToPixels(template.dataRowHeight) : undefined;
+
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const excelRowNumber = i + 2;
@@ -250,7 +260,12 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
       try {
         const imgBuffer = await storage.get(r.evidenceStorageKey);
         const dims = imageSize(imgBuffer);
-        const placement = computeImagePlacement(dims.width, dims.height);
+        const placement = computeImagePlacement(
+          dims.width,
+          dims.height,
+          maxImageWidthPx,
+          maxImageHeightPx,
+        );
         const extension = (dims.type === 'jpg' ? 'jpeg' : dims.type) as 'png' | 'jpeg' | 'gif';
         const imageId = workbook.addImage({ buffer: imgBuffer as unknown as ExcelJS.Buffer, extension });
         sheet.addImage(imageId, {

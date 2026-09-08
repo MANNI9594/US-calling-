@@ -7,6 +7,7 @@ import { logAudit } from '../services/audit/auditService';
 import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { runEvidenceRepair } from '../services/evidenceRepair/evidenceRepairService';
+import { broadcast } from '../services/realtime/eventBus';
 
 export const evidenceRouter = Router();
 evidenceRouter.use(requireAuth);
@@ -98,6 +99,7 @@ evidenceRouter.post('/:id/assign', asyncHandler(async (req, res) => {
   });
 
   res.json({ evidence: updated });
+  broadcast('vessels-changed');
 }));
 
 evidenceRouter.post('/:id/confirm', asyncHandler(async (req, res) => {
@@ -120,6 +122,7 @@ evidenceRouter.post('/:id/confirm', asyncHandler(async (req, res) => {
   });
 
   res.json({ evidence: updated });
+  broadcast('vessels-changed');
 }));
 
 /**
@@ -158,6 +161,7 @@ evidenceRouter.post('/bulk-confirm-clean-anchors', asyncHandler(async (req, res)
   });
 
   res.json({ confirmed: candidates.length });
+  broadcast('vessels-changed');
 }));
 
 const rejectSchema = z.object({ reason: z.enum(['DUPLICATE', 'IRRELEVANT']) });
@@ -192,6 +196,7 @@ evidenceRouter.post('/:id/reject', asyncHandler(async (req, res) => {
   });
 
   res.json({ evidence: updated });
+  broadcast('vessels-changed');
 }));
 
 const ocrRepairSchema = z.object({ importBatchId: z.string().uuid().optional() });

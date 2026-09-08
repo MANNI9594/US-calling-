@@ -8,6 +8,7 @@ import { broadcast } from '../services/realtime/eventBus';
 import { env } from '../config/env';
 import { storage } from '../services/storage';
 import { previewMasterImport, commitMasterImport, backfillMissingPermanentFields } from '../services/import/masterImportService';
+import { cleanupStaleDateQualityFlags } from '../services/dataQuality/dataQualityService';
 import { asyncHandler } from '../middleware/asyncHandler';
 
 export const importRouter = Router();
@@ -105,6 +106,18 @@ importRouter.get('/batches/:id', asyncHandler(async (req, res) => {
  */
 importRouter.post('/backfill-missing-fields', asyncHandler(async (_req, res) => {
   const summary = await backfillMissingPermanentFields();
+  res.json({ summary });
+  broadcast('vessels-changed');
+}));
+
+/**
+ * One-time sweep resolving stale OPEN date-quality flags that no longer
+ * apply to a vessel's current data — see dataQualityService.ts for the
+ * real bug this remediates (batch updates didn't clear stale flags before
+ * a fix landed; this cleans up ones already stuck from before that fix).
+ */
+importRouter.post('/cleanup-stale-flags', asyncHandler(async (_req, res) => {
+  const summary = await cleanupStaleDateQualityFlags();
   res.json({ summary });
   broadcast('vessels-changed');
 }));

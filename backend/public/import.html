@@ -19,6 +19,7 @@
     <span class="brand">US Calling <span>Master</span></span>
     <a href="/active-master.html">VECS List</a>
     <a href="/import.html" class="active">Import Master Workbook</a>
+    <a href="/us-calling-list.html">US Calling List</a>
     <a href="/us-calling-upload.html">Update from US Calling List</a>
     <a href="/evidence-review.html">Evidence Review</a>
     <a href="/manage-team.html">Team</a>
@@ -77,6 +78,17 @@
       </p>
       <button id="backfillBtn" class="btn btn-primary">Run Backfill</button>
       <span id="backfillStatus" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-600);"></span>
+    </div>
+
+    <div class="card">
+      <h3>Clean Up Stale Flags</h3>
+      <p class="hint">
+        A "1 flag(s)" warning can occasionally stay stuck even after the underlying date was
+        already fixed by a later update. This one-time sweep re-checks every vessel's flags
+        against its actual current data and resolves any that no longer apply.
+      </p>
+      <button id="cleanupBtn" class="btn btn-primary">Run Cleanup</button>
+      <span id="cleanupStatus" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-600);"></span>
     </div>
   </div>
 
@@ -285,6 +297,33 @@
         }
         const s = data.summary;
         status.textContent = `Checked ${s.vesselsChecked} vessels, updated ${s.vesselsUpdated}, filled in ${s.fieldsBackfilled} field(s) total.`;
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('cleanupBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('cleanupBtn');
+      const status = document.getElementById('cleanupStatus');
+      btn.disabled = true;
+      status.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/import/cleanup-stale-flags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.error || 'Cleanup failed.';
+          return;
+        }
+        const s = data.summary;
+        status.textContent = `Checked ${s.vesselsChecked} vessel(s) with open flags, resolved ${s.issuesResolved} stale flag(s).`;
       } catch {
         status.textContent = 'Could not reach the server.';
       } finally {

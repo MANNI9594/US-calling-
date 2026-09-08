@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { prisma } from '../../db/prisma';
 import { validateImoNumber } from '../../utils/imoChecksum';
 import { parseOperationalDate } from '../../utils/parseOperationalDate';
 
@@ -115,4 +116,75 @@ export async function checkImoPlausibility(
   }
 
   return isPlausible;
+}
+
+export interface StaleFlagCleanupSummary {
+  vesselsChecked: number;
+  issuesResolved: number;
+}
+
+/**
+ * One-time sweep: resolves any OPEN date-quality issue (INVALID_DATE_FORMAT,
+ * ETD_BEFORE_ETA, PAST_ETD) that no longer applies to a vessel's CURRENT
+ * calling record. Exists specifically to remediate a real bug found in
+ * live use: the batch update path (US Calling List uploads/apply) didn't
+ * clear stale flags before this fix landed, so a flag raised by an
+ * earlier, wrong upload could sit open forever even after a later, correct
+ * upload fixed the actual dates. New flags can no longer get stuck this
+ * way (see usCallingImportService.ts), but this sweep is what cleans up
+ * ones already stuck from before that fix, without requiring the user to
+ * manually re-save every affected vessel one at a time.
+ *
+ * Re-derives the truth from the vessel's CURRENT record specifically —
+ * an issue may be attached to an older, now-superseded calling record,
+ * so this never trusts "which record is this issue attached to," only
+ * "is this actually still true right now."
+ */
+export async function cleanupStaleDateQualityFlags(): Promise<StaleFlagCleanupSummary> {
+  const vessels = await prisma.vessel.findMany({
+    include: {
+      callingRecords: { where: { isCurrent: true }, take: 1 },
+      dataQualityIssues: {
+        where: { status: 'OPEN', issueType: { in: ['INVALID_DATE_FORMAT', 'ETD_BEFORE_ETA', 'PAST_ETD'] } },
+      },
+    },
+  });
+
+  const summary: StaleFlagCleanupSummary = { vesselsChecked: 0, issuesResolved: 0 };
+  const now = Date.now();
+
+  for (const vessel of vessels) {
+    if (vessel.dataQualityIssues.length === 0) continue;
+    summary.vesselsChecked += 1;
+
+    const current = vessel.callingRecords[0];
+    const etaResult = parseOperationalDate(current?.etaRaw ?? null);
+    const etdResult = parseOperationalDate(current?.etdRaw ?? null);
+    const etdBeforeEta = Boolean(etaResult.parsed && etdResult.parsed && etdResult.parsed.getTime() < etaResult.parsed.getTime());
+    const isPastEtd = Boolean(etdResult.parsed && etdResult.parsed.getTime() < now);
+
+    for (const issue of vessel.dataQualityIssues) {
+      let stillTrue = true;
+
+      if (issue.issueType === 'INVALID_DATE_FORMAT' && issue.fieldName === 'eta') {
+        stillTrue = !etaResult.parsed;
+      } else if (issue.issueType === 'INVALID_DATE_FORMAT' && issue.fieldName === 'etd') {
+        stillTrue = !etdResult.parsed;
+      } else if (issue.issueType === 'ETD_BEFORE_ETA') {
+        stillTrue = etdBeforeEta;
+      } else if (issue.issueType === 'PAST_ETD') {
+        stillTrue = isPastEtd;
+      }
+
+      if (!stillTrue) {
+        await prisma.dataQualityIssue.update({
+          where: { id: issue.id },
+          data: { status: 'RESOLVED', resolvedAt: new Date() },
+        });
+        summary.issuesResolved += 1;
+      }
+    }
+  }
+
+  return summary;
 }

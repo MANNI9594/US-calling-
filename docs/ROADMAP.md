@@ -321,3 +321,21 @@ User noticed a "1 flag(s)" tooltip reading "ETD is before ETA" on a vessel whose
 Fixed by adding the same stale-flag-clearing step (scoped by `vesselId`, not the specific calling record, since the flag may be attached to a historical one) to the shared batch commit path — confirmed via code review that both the normal update branch and the archived-vessel-restore branch flow through this same fixed code.
 
 **Known limitation, disclosed rather than silently left:** this fix prevents *new* stale flags going forward; it does not retroactively clean up flags already stuck in a live database from before this fix. The user was offered a one-time cleanup endpoint and declined, opting to manually re-save the handful of affected vessels via the live-edit feature instead (which already correctly clears a flag the moment the field is touched).
+
+## Stale flag one-time cleanup (the user reconsidered and wanted it after all)
+
+Added `POST /api/import/cleanup-stale-flags` and a "Run Cleanup" button on `import.html`. Re-derives, for every vessel with any open date-quality flag, whether that flag is actually still true against the vessel's CURRENT calling record (not whichever record the flag happens to be attached to) — resolving it if not. Complements the earlier fix (which stops *new* stale flags from occurring); this is what cleans up ones already stuck in a live database from before that fix landed.
+
+## US Calling List page (persistent working list) — full feature
+
+Built the actual frontend for the persistent US Calling List backend from earlier this session:
+
+- `public/us-calling-list.html` — a live-editable table (same double-click-to-edit pattern as VECS List) for Vessel Name, Voyage Type, Transaction Type, Send To, Port, ETA, ETD. Add a row manually, delete rows individually or in bulk, or import/refresh from an Excel file (upserts by vessel name — never duplicates).
+- **Departure Reminder filter** — the specific feature requested: shows every entry whose ETD is either already overdue or within the next 2 days, so vessels needing a departure reminder (sent manually via Outlook, per the user's own workflow) can be found in one click instead of scanning the whole list.
+- Same sort (ETA/ETD/Name, both directions) and red-overdue-ETD styling as VECS List, for visual consistency.
+- **"Apply to VECS List" with a mandatory confirmation popup** showing exact counts before anything changes: how many vessels will be updated, unchanged, skipped as new/unknown or ambiguous, and critically — how many will be **removed from VECS** (departed), by name, before the user confirms. Nothing applies silently.
+- Live sync via the existing SSE infrastructure (`us-calling-changed` event), so multiple people editing this list see each other's changes in real time, same as VECS List.
+- Download button exporting the current list as a plain 7-column .xlsx.
+- All main pages' navigation updated with a "US Calling List" link; "Active Master" renamed to "VECS List" throughout (nav, page title, headings) per explicit request — the underlying URL/file remains `active-master.html` to avoid breaking any existing bookmarks/links, only the visible label changed.
+
+**Not yet tested live** — next actions: (1) add a few entries and confirm live editing/deleting/import all work, (2) confirm the Reminder filter correctly surfaces overdue/soon-departing vessels, (3) run "Apply to VECS List" against real data and verify the confirmation popup's counts match reality — especially confirming a vessel with a genuine future ETA is correctly NOT listed as a removal candidate even if it's absent from the current US Calling List entries, per the explicit conservative-removal requirement already unit-tested in isolation (`removalCandidate.test.ts`) but not yet exercised end-to-end.

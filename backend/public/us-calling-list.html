@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — US Calling List</title>
+<link rel="stylesheet" href="/styles.css" />
+<script src="/date-format.js"></script>
+<style>
+  .controls-row { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+  .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
+  .date-warning { color: var(--amber-600); font-weight: 700; }
+  .date-past-due { color: var(--red-600); font-weight: 700; }
+  td[data-field="etaRaw"], td[data-field="etdRaw"] { text-align: center; }
+  .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .scroll-box { max-height: 65vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 14px; box-shadow: var(--shadow-sm); }
+  .scroll-box table.data-table thead th { top: 0; }
+
+  td.editable { cursor: pointer; }
+  td.editable:hover { background: var(--blue-50); outline: 1px dashed var(--blue-100); }
+  td.editing input, td.editing select { width: 100%; font-size: 0.85rem; padding: 4px 6px; border: 1px solid var(--blue-600); border-radius: 4px; }
+
+  .dropzone-mini {
+    border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 16px;
+    text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
+  }
+  .dropzone-mini.dragover { background: var(--blue-50); border-color: var(--blue-600); }
+  .dropzone-mini input { display: none; }
+
+  #confirmOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.55);
+    z-index: 300; align-items: center; justify-content: center; padding: 24px;
+  }
+  #confirmOverlay.show { display: flex; }
+  #confirmCard {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-md);
+    max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 24px 26px;
+  }
+  #confirmCard h3 { margin-top: 0; }
+  #confirmCard table.summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+  #confirmCard table.summary-table th, #confirmCard table.summary-table td { text-align: left; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+  #confirmCard table.summary-table th { color: var(--text-600); font-weight: 600; width: 65%; }
+  #confirmCard .removal-list { max-height: 140px; overflow-y: auto; font-size: 0.85rem; margin: 8px 0; padding-left: 20px; color: var(--red-600); }
+  #confirmCard .btn-row { display: flex; gap: 10px; margin-top: 18px; }
+</style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/active-master.html">VECS List</a>
+    <a href="/import.html">Import Master Workbook</a>
+    <a href="/us-calling-list.html" class="active">US Calling List</a>
+    <a href="/us-calling-upload.html">Update from US Calling List (file)</a>
+    <a href="/evidence-review.html">Evidence Review</a>
+    <a href="/manage-team.html">Team</a>
+    <a href="/logout.html">Logout</a>
+  </nav>
+
+  <div class="page full">
+    <div class="page-header">
+      <div>
+        <h1>US Calling List</h1>
+        <p class="hint">
+          The working day-to-day list. Edit rows directly, or import a fresh file below — either way, click
+          "Apply to VECS List" whenever you're ready to push these changes through.
+        </p>
+      </div>
+      <div class="header-actions">
+        <a href="/api/us-calling-entries/export" class="btn btn-secondary">⬇ Download List</a>
+        <button id="applyBtn" class="btn btn-accent">✓ Apply to VECS List</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <div class="dropzone-mini" id="dropzone">
+        <strong>Import / refresh from Excel</strong> — drop a .xlsx here, or click to choose one.
+        Existing vessels are updated by name match; nothing is duplicated.
+        <input type="file" id="fileInput" accept=".xlsx" />
+      </div>
+      <div id="importStatus" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
+    </div>
+
+    <div class="chip-row" id="filterChips" style="margin-top: 16px;"></div>
+
+    <div class="controls-row">
+      <input type="text" id="searchInput" placeholder="Search vessel name..." style="width: 220px;" />
+
+      <select id="sortSelect">
+        <option value="eta-asc">Sort: ETA (earliest first)</option>
+        <option value="eta-desc">Sort: ETA (latest first)</option>
+        <option value="etd-asc">Sort: ETD (earliest first)</option>
+        <option value="etd-desc">Sort: ETD (latest first)</option>
+        <option value="name-asc">Sort: Vessel Name (A-Z)</option>
+        <option value="name-desc">Sort: Vessel Name (Z-A)</option>
+      </select>
+
+      <button id="addRowBtn" class="btn btn-primary">+ Add Vessel</button>
+      <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
+      <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
+      <button id="deleteSelectedBtn" class="btn btn-danger" disabled>Delete Selected</button>
+      <span class="selection-count" id="selectionCount"></span>
+      <span id="liveSyncStatus" style="font-size: 0.78rem; color: var(--text-400); margin-left: auto;">○ Connecting…</span>
+    </div>
+
+    <div id="message" class="alert"></div>
+
+    <div class="scroll-box">
+      <table class="data-table" id="entriesTable"></table>
+    </div>
+  </div>
+
+  <div id="confirmOverlay">
+    <div id="confirmCard">
+      <h3>Apply to VECS List?</h3>
+      <div id="confirmBody">Loading…</div>
+    </div>
+  </div>
+
+  <script>
+    let entries = [];
+    let displayEntries = [];
+    let selected = new Set();
+    let searchTimer = null;
+    let activeFilter = 'ALL';
+    let sortKey = 'eta-asc';
+
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    const FILTERS = [
+      { key: 'ALL', label: 'All', dot: 'blue' },
+      { key: 'REMINDER', label: 'Departure Reminder (\u22642 days or overdue)', dot: 'red' },
+      { key: 'NO_ETA', label: 'Missing ETA/ETD', dot: 'amber' },
+    ];
+
+    function renderFilterChips() {
+      const div = document.getElementById('filterChips');
+      div.innerHTML = FILTERS.map((f) => `
+        <div class="chip ${activeFilter === f.key ? 'active' : ''}" data-key="${f.key}"><span class="dot ${f.dot}"></span>${f.label}</div>
+      `).join('');
+      div.querySelectorAll('.chip').forEach((el) => {
+        el.addEventListener('click', () => {
+          activeFilter = el.dataset.key;
+          renderFilterChips();
+          applyFilterAndSort();
+        });
+      });
+    }
+
+    document.getElementById('sortSelect').addEventListener('change', (e) => {
+      sortKey = e.target.value;
+      applyFilterAndSort();
+    });
+
+    async function loadEntries() {
+      const table = document.getElementById('entriesTable');
+      table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      const search = document.getElementById('searchInput').value.trim();
+
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+
+      const res = await fetch(`/api/us-calling-entries?${params.toString()}`, { credentials: 'include' });
+      const data = await res.json();
+      entries = data.entries || [];
+      applyFilterAndSort();
+    }
+
+    function getTime(raw) {
+      if (!raw) return null;
+      const { text, warning } = formatDateForDisplay(raw);
+      if (warning) return null;
+      const [dd, mm, yyyy] = text.split('-').map(Number);
+      return new Date(Date.UTC(yyyy, mm - 1, dd)).getTime();
+    }
+
+    function daysFromNow(ms) {
+      return (ms - Date.now()) / (1000 * 60 * 60 * 24);
+    }
+
+    function applyFilterAndSort() {
+      let list = entries.slice();
+
+      if (activeFilter === 'REMINDER') {
+        list = list.filter((e) => {
+          const etdMs = getTime(e.etdRaw);
+          if (etdMs === null) return false;
+          return daysFromNow(etdMs) <= 2;
+        });
+      } else if (activeFilter === 'NO_ETA') {
+        list = list.filter((e) => !e.etaRaw || !e.etdRaw || getTime(e.etaRaw) === null || getTime(e.etdRaw) === null);
+      }
+
+      const [field, dir] = sortKey.split('-');
+      const mul = dir === 'desc' ? -1 : 1;
+      list.sort((a, b) => {
+        let av, bv;
+        if (field === 'eta') { av = getTime(a.etaRaw) ?? Infinity; bv = getTime(b.etaRaw) ?? Infinity; }
+        else if (field === 'etd') { av = getTime(a.etdRaw) ?? Infinity; bv = getTime(b.etdRaw) ?? Infinity; }
+        else { av = a.vesselName.toLowerCase(); bv = b.vesselName.toLowerCase(); }
+        if (av < bv) return -1 * mul;
+        if (av > bv) return 1 * mul;
+        return 0;
+      });
+
+      displayEntries = list;
+      renderTable();
+    }
+
+    function esc(v) {
+      return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
+    }
+    function dateCell(raw, isOverdue) {
+      if (!raw) return '—';
+      const { text, warning } = formatDateForDisplay(raw);
+      if (warning) return `<span class="date-warning" title="Could not parse this date">⚠ ${text}</span>`;
+      if (isOverdue) return `<span class="date-past-due">${text}</span>`;
+      return text;
+    }
+    function editableTd(id, field, rawValue, displayValue) {
+      return `<td class="editable" data-id="${id}" data-field="${field}" data-value="${esc(rawValue)}">${displayValue ?? '—'}</td>`;
+    }
+
+    function renderTable() {
+      const table = document.getElementById('entriesTable');
+      if (displayEntries.length === 0) {
+        table.innerHTML = '<tr><td class="empty-state">No entries. Add a vessel or import a file above.</td></tr>';
+        return;
+      }
+
+      const rows = displayEntries.map((e) => {
+        const checked = selected.has(e.id) ? 'checked' : '';
+        const etdMs = getTime(e.etdRaw);
+        const isReminder = etdMs !== null && daysFromNow(etdMs) <= 2;
+        return `
+          <tr class="${isReminder ? 'flagged' : ''}" data-entry-id="${e.id}">
+            <td><input type="checkbox" class="rowCheck" data-id="${e.id}" ${checked} /></td>
+            ${editableTd(e.id, 'vesselName', e.vesselName, `<strong>${e.vesselName}</strong>${isReminder ? ' <span class="badge badge-red">Reminder</span>' : ''}`)}
+            ${editableTd(e.id, 'voyageType', e.voyageType, e.voyageType ?? '—')}
+            ${editableTd(e.id, 'transactionType', e.transactionType, e.transactionType ?? '—')}
+            ${editableTd(e.id, 'sendTo', e.sendTo, e.sendTo ?? '—')}
+            ${editableTd(e.id, 'arrivalPort', e.arrivalPort, e.arrivalPort ?? '—')}
+            ${editableTd(e.id, 'etaRaw', e.etaRaw, dateCell(e.etaRaw, false))}
+            ${editableTd(e.id, 'etdRaw', e.etdRaw, dateCell(e.etdRaw, isReminder))}
+            <td><button class="btn btn-secondary delete-row-btn" data-id="${e.id}" style="font-size:0.75rem; padding:4px 8px;">Delete</button></td>
+          </tr>
+        `;
+      }).join('');
+
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th style="width:32px;"></th>
+            <th>Vessel Name</th>
+            <th>Voyage Type</th>
+            <th>Transaction Type</th>
+            <th>Send To</th>
+            <th>Port</th>
+            <th>ETA</th>
+            <th>ETD</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      `;
+
+      table.querySelectorAll('.rowCheck').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) selected.add(cb.dataset.id);
+          else selected.delete(cb.dataset.id);
+          updateDeleteButton();
+        });
+      });
+      table.querySelectorAll('.delete-row-btn').forEach((btn) => {
+        btn.addEventListener('click', () => deleteEntries([btn.dataset.id]));
+      });
+      table.querySelectorAll('td.editable').forEach((td) => {
+        td.addEventListener('dblclick', () => startEdit(td));
+      });
+    }
+
+    function updateDeleteButton() {
+      document.getElementById('deleteSelectedBtn').disabled = selected.size === 0;
+      document.getElementById('selectionCount').textContent = selected.size > 0 ? `${selected.size} selected` : '';
+    }
+
+    function startEdit(td) {
+      if (td.classList.contains('editing')) return;
+      const field = td.dataset.field;
+      const id = td.dataset.id;
+      const currentValue = td.dataset.value || '';
+      td.classList.add('editing');
+      const originalHtml = td.innerHTML;
+
+      const isDateField = field === 'etaRaw' || field === 'etdRaw';
+      const placeholder = isDateField ? ' placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first"' : '';
+      td.innerHTML = `<input type="text" value="${esc(currentValue)}"${placeholder} />`;
+      const inputEl = td.querySelector('input');
+      inputEl.focus();
+      inputEl.select();
+
+      let saved = false;
+      const save = async () => {
+        if (saved) return;
+        const newValue = inputEl.value;
+
+        if (isDateField && newValue && !/^\d{2}[-.]\d{2}[-.]\d{4}$/.test(newValue)) {
+          if (!confirm(`"${newValue}" doesn't look like DD-MM-YYYY. Save it exactly as typed anyway?`)) {
+            inputEl.focus();
+            return;
+          }
+        }
+        saved = true;
+
+        if (newValue === currentValue) {
+          td.classList.remove('editing');
+          td.innerHTML = originalHtml;
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/us-calling-entries/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ field, value: newValue }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not save.');
+          await loadEntries();
+        } catch (err) {
+          alert(err.message || 'Could not reach the server.');
+          td.classList.remove('editing');
+          td.innerHTML = originalHtml;
+        }
+      };
+
+      inputEl.addEventListener('blur', save);
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); inputEl.blur(); }
+        if (e.key === 'Escape') { saved = true; td.classList.remove('editing'); td.innerHTML = originalHtml; }
+      });
+    }
+
+    async function deleteEntries(ids) {
+      if (!confirm(`Delete ${ids.length} entry(ies) from the US Calling List? This only removes them from this working list — it does not touch VECS List.`)) return;
+      for (const id of ids) {
+        await fetch(`/api/us-calling-entries/${id}`, { method: 'DELETE', credentials: 'include' });
+      }
+      selected.clear();
+      updateDeleteButton();
+      loadEntries();
+    }
+
+    document.getElementById('deleteSelectedBtn').addEventListener('click', () => deleteEntries(Array.from(selected)));
+    document.getElementById('selectAllBtn').addEventListener('click', () => {
+      displayEntries.forEach((e) => selected.add(e.id));
+      renderTable();
+      updateDeleteButton();
+    });
+    document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+      selected.clear();
+      renderTable();
+      updateDeleteButton();
+    });
+
+    document.getElementById('addRowBtn').addEventListener('click', async () => {
+      const vesselName = prompt('Vessel name for the new entry:');
+      if (!vesselName) return;
+      const res = await fetch('/api/us-calling-entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ vesselName }),
+      });
+      if (res.ok) loadEntries();
+      else alert('Could not add entry.');
+    });
+
+    document.getElementById('searchInput').addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadEntries, 300);
+    });
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) doImport(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => { if (e.target.files[0]) doImport(e.target.files[0]); });
+
+    async function doImport(file) {
+      const status = document.getElementById('importStatus');
+      status.textContent = 'Importing…';
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch('/api/us-calling-entries/import', { method: 'POST', credentials: 'include', body: formData });
+        const data = await res.json();
+        if (!res.ok) { status.textContent = data.error || 'Import failed.'; return; }
+        const s = data.summary;
+        status.textContent = `Done: ${s.created} added, ${s.updated} updated (${s.totalRows} rows in file).`;
+        loadEntries();
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      }
+    }
+
+    const confirmOverlay = document.getElementById('confirmOverlay');
+    const confirmBody = document.getElementById('confirmBody');
+
+    document.getElementById('applyBtn').addEventListener('click', async () => {
+      confirmOverlay.classList.add('show');
+      confirmBody.innerHTML = 'Checking what would change…';
+
+      const res = await fetch('/api/us-calling-entries/apply-preview', { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) {
+        confirmBody.innerHTML = `<p>${data.error || 'Could not compute preview.'}</p><div class="btn-row"><button class="btn btn-secondary" id="cancelApplyBtn">Close</button></div>`;
+        document.getElementById('cancelApplyBtn').addEventListener('click', () => confirmOverlay.classList.remove('show'));
+        return;
+      }
+
+      const p = data.preview;
+      confirmBody.innerHTML = `
+        <table class="summary-table">
+          <tr><th>Entries in this list</th><td>${p.counts.totalEntries}</td></tr>
+          <tr><th>Will be updated</th><td>${p.counts.updated}</td></tr>
+          <tr><th>Unchanged</th><td>${p.counts.unchanged}</td></tr>
+          <tr><th>New / unknown vessel (not applied)</th><td>${p.counts.newUnknown}</td></tr>
+          <tr><th>Archived vessel found (candidate to restore)</th><td>${p.counts.archivedFound}</td></tr>
+          <tr><th>Ambiguous match (not applied)</th><td>${p.counts.ambiguous}</td></tr>
+          <tr><th style="color:var(--red-600);">Will be REMOVED from VECS (departed)</th><td style="color:var(--red-600); font-weight:700;">${p.counts.toBeRemoved}</td></tr>
+        </table>
+        ${p.removalCandidates.length > 0 ? `
+          <p style="margin-top:10px; font-weight:600;">Vessels being removed (archived, not deleted — fully restorable with all data and evidence intact):</p>
+          <ul class="removal-list">${p.removalCandidates.map((v) => `<li>${v.vesselName} (ETA was: ${v.etaRaw ?? 'unknown'})</li>`).join('')}</ul>
+        ` : '<p style="margin-top:10px; color:var(--text-600);">No vessels will be removed.</p>'}
+        <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:0.88rem;">
+          <input type="checkbox" id="restoreArchivedCheckbox" /> Also restore any archived vessels found above
+        </label>
+        <div class="btn-row">
+          <button class="btn btn-accent" id="confirmApplyBtn">Confirm & Apply</button>
+          <button class="btn btn-secondary" id="cancelApplyBtn">Cancel</button>
+        </div>
+      `;
+
+      document.getElementById('cancelApplyBtn').addEventListener('click', () => confirmOverlay.classList.remove('show'));
+      document.getElementById('confirmApplyBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('confirmApplyBtn');
+        btn.disabled = true;
+        btn.textContent = 'Applying…';
+        const restoreArchivedVessels = document.getElementById('restoreArchivedCheckbox').checked;
+
+        try {
+          const applyRes = await fetch('/api/us-calling-entries/apply-to-vecs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ restoreArchivedVessels }),
+          });
+          const applyData = await applyRes.json();
+          confirmOverlay.classList.remove('show');
+          const message = document.getElementById('message');
+          if (!applyRes.ok) {
+            message.className = 'alert alert-error show';
+            message.textContent = applyData.error || 'Apply failed.';
+            return;
+          }
+          const s = applyData.summary;
+          message.className = 'alert alert-success show';
+          message.textContent = `Applied: ${s.vesselsUpdated} updated, ${s.vesselsRestored} restored, ${s.vesselsRemoved} removed from VECS, ${s.newUnknownSkipped} new/unknown skipped.`;
+        } catch {
+          confirmOverlay.classList.remove('show');
+        }
+      });
+    });
+    confirmOverlay.addEventListener('click', (e) => { if (e.target === confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+    loadEntries();
+    renderFilterChips();
+
+    function connectLiveSync() {
+      const statusEl = document.getElementById('liveSyncStatus');
+      const source = new EventSource('/api/events/stream');
+      source.addEventListener('connected', () => { statusEl.textContent = '● Live'; statusEl.style.color = 'var(--green-600)'; });
+      source.addEventListener('us-calling-changed', () => loadEntries());
+      source.onerror = () => { statusEl.textContent = '○ Reconnecting…'; statusEl.style.color = 'var(--text-400)'; };
+    }
+    connectLiveSync();
+  </script>
+</body>
+</html>

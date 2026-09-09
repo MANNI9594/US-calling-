@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import multer from 'multer';
+import { createHash } from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../middleware/auth';
@@ -8,9 +10,23 @@ import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { runEvidenceRepair } from '../services/evidenceRepair/evidenceRepairService';
 import { broadcast } from '../services/realtime/eventBus';
+import { env } from '../config/env';
 
 export const evidenceRouter = Router();
 evidenceRouter.use(requireAuth);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: env.MAX_UPLOAD_SIZE_MB * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = ['image/png', 'image/jpeg', 'image/gif'].includes(file.mimetype);
+    if (!ok) {
+      cb(new AppError(400, 'Only PNG, JPEG, or GIF images are accepted'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 /**
  * The review workflow the user explicitly asked for:
@@ -218,4 +234,97 @@ evidenceRouter.post('/ocr-repair', asyncHandler(async (req, res) => {
 
   const summary = await runEvidenceRepair(parsed.data.importBatchId);
   res.json({ summary });
+}));
+
+/**
+ * Manually uploads a photo/screenshot and attaches it as evidence. This is
+ * the HIGHEST trust association method — a human directly chose this
+ * exact image for this exact vessel, so if a vesselId is supplied it goes
+ * straight to CONFIRMED (associationMethod = MANUAL), unlike every other
+ * path in this app which requires a separate confirmation step. Omitting
+ * vesselId drops it into the Unassigned pool instead, same as any other
+ * evidence with no home yet.
+ *
+ * Deduplicated by content hash: uploading the exact same image bytes twice
+ * (e.g. a double-click) reuses the existing active record rather than
+ * creating a literal duplicate.
+ */
+const uploadEvidenceSchema = z.object({ vesselId: z.string().uuid().optional() });
+
+evidenceRouter.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) throw new AppError(400, 'No file uploaded (expected multipart field "file")');
+
+  const parsed = uploadEvidenceSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+
+  if (parsed.data.vesselId) {
+    const vessel = await prisma.vessel.findUnique({ where: { id: parsed.data.vesselId } });
+    if (!vessel) throw new AppError(404, 'Vessel not found');
+  }
+
+  const contentHash = createHash('sha256').update(req.file.buffer).digest('hex');
+  const existing = await prisma.vesselEvidence.findFirst({ where: { contentHash, isActive: true } });
+  if (existing) {
+    res.status(200).json({ evidence: existing, duplicate: true });
+    return;
+  }
+
+  const extension = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/gif' ? 'gif' : 'jpeg';
+  const storageKey = storage.buildKey('evidence', `evidence.${extension}`);
+  await storage.put(storageKey, req.file.buffer, req.file.mimetype);
+
+  const evidence = await prisma.vesselEvidence.create({
+    data: {
+      vesselId: parsed.data.vesselId ?? null,
+      storageKey,
+      originalFilename: req.file.originalname,
+      contentHash,
+      mimeType: req.file.mimetype,
+      fileSizeBytes: req.file.size,
+      associationMethod: 'MANUAL',
+      reviewStatus: parsed.data.vesselId ? 'CONFIRMED' : 'UNASSIGNED',
+      reviewedByUserId: parsed.data.vesselId ? req.userId : null,
+      reviewedAt: parsed.data.vesselId ? new Date() : null,
+    },
+  });
+
+  await logAudit({
+    eventType: 'EVIDENCE_ASSIGNED',
+    vesselId: parsed.data.vesselId,
+    actorUserId: req.userId,
+    summary: `Photo manually uploaded${parsed.data.vesselId ? ' and attached' : ' (unassigned)'}`,
+  });
+
+  res.status(201).json({ evidence, duplicate: false });
+  broadcast('vessels-changed');
+}));
+
+/**
+ * Permanently deletes an evidence record and its stored file — a genuine
+ * hard delete, unlike "reject" (which only changes review status and
+ * always keeps the file). This is intentional and deliberately different
+ * from the "never silently delete" principle that governs the AUTOMATED
+ * import/OCR pipeline: this is a human explicitly choosing, with a
+ * confirmation dialog, to remove one specific photo they can see — not an
+ * automated process discarding something without asking.
+ */
+evidenceRouter.delete('/:id', asyncHandler(async (req, res) => {
+  const evidence = await prisma.vesselEvidence.findUnique({ where: { id: req.params.id } });
+  if (!evidence) throw new AppError(404, 'Evidence record not found');
+
+  await storage.delete(evidence.storageKey).catch(() => undefined); // best-effort; don't block the DB delete on a storage hiccup
+  await prisma.vesselEvidence.delete({ where: { id: evidence.id } });
+
+  await logAudit({
+    eventType: 'EVIDENCE_REJECTED',
+    vesselId: evidence.vesselId ?? undefined,
+    actorUserId: req.userId,
+    summary: `Evidence photo permanently deleted by user`,
+  });
+
+  res.json({ ok: true });
+  broadcast('vessels-changed');
 }));

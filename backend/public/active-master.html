@@ -435,8 +435,12 @@
       applyFilterAndSort();
     });
 
-    function editableTd(field, rawValue, displayValue) {
-      return `<td class="editable" data-field="${field}" data-colkey="${field}" data-value="${esc(rawValue)}">${displayValue ?? '—'}</td>`;
+    function editableTd(field, rawValue, displayValue, extraStyle) {
+      const style = extraStyle ? ` style="${extraStyle}"` : '';
+      return `<td class="editable" data-field="${field}" data-colkey="${field}" data-value="${esc(rawValue)}"${style}>${displayValue ?? '—'}</td>`;
+    }
+    function chinaHighlightStyle(value) {
+      return value && value.toLowerCase().includes('china') ? 'background: #fff200;' : '';
     }
 
     function renderTable() {
@@ -469,12 +473,12 @@
             ${editableTd('vesselType', v.vesselType, v.vesselType ?? '—')}
             ${editableTd('summerDeadweightOrTeu', v.summerDeadweightOrTeu, v.summerDeadweightOrTeu ?? '—')}
             ${editableTd('ballastOrLoaded', cr.ballastOrLoaded, cr.ballastOrLoaded ?? '—')}
-            ${editableTd('registeredOwnerPerCor', v.registeredOwnerPerCor, v.registeredOwnerPerCor ?? '—')}
-            ${editableTd('registeredOwnerPerCsr', v.registeredOwnerPerCsr, v.registeredOwnerPerCsr ?? '—')}
+            ${editableTd('registeredOwnerPerCor', v.registeredOwnerPerCor, v.registeredOwnerPerCor ?? '—', chinaHighlightStyle(v.registeredOwnerPerCor))}
+            ${editableTd('registeredOwnerPerCsr', v.registeredOwnerPerCsr, v.registeredOwnerPerCsr ?? '—', chinaHighlightStyle(v.registeredOwnerPerCsr))}
             ${editableTd('operatorNameInCofr', v.operatorNameInCofr, v.operatorNameInCofr ?? '—')}
             ${editableTd('bridgeLetter', v.bridgeLetter, v.bridgeLetter ?? '—')}
             <td data-colkey="evidence">${evidenceCell}</td>
-            ${editableTd('builtLocation', v.builtLocation, v.builtLocation ?? '—')}
+            ${editableTd('builtLocation', v.builtLocation, v.builtLocation ?? '—', chinaHighlightStyle(v.builtLocation))}
             ${editableTd('serviceFeesApplicable', v.serviceFeesApplicable, v.serviceFeesApplicable ?? '—')}
             ${editableTd('arrivalPort', cr.arrivalPort, cr.arrivalPort ?? '—')}
             ${editableTd('etaRaw', cr.etaRaw, dateCell(cr.etaRaw, false))}
@@ -624,11 +628,15 @@
     async function showDetail(vesselId) {
       modalOverlay.classList.add('show');
       modalBody.innerHTML = 'Loading…';
+      await renderDetailModal(vesselId);
+    }
 
+    async function renderDetailModal(vesselId) {
       const res = await fetch(`/api/vessels/${vesselId}`, { credentials: 'include' });
       const data = await res.json();
       const v = data.vessel;
       const cr = (v.callingRecords || []).find((r) => r.isCurrent) || {};
+      const evidenceList = v.evidence || [];
 
       modalBody.innerHTML = `
         <h3>${v.vesselName}</h3>
@@ -637,18 +645,72 @@
           <dt>Flag</dt><dd>${v.flag ?? '—'}</dd>
           <dt>Vessel Type</dt><dd>${v.vesselType ?? '—'}</dd>
           <dt>Summer Deadweight/TEU</dt><dd>${v.summerDeadweightOrTeu ?? '—'}</dd>
-          <dt>Registered Owner (CoR)</dt><dd>${v.registeredOwnerPerCor ?? '—'}</dd>
-          <dt>Registered Owner (CSR)</dt><dd>${v.registeredOwnerPerCsr ?? '—'}</dd>
+          <dt>Registered Owner (CoR)</dt><dd style="${chinaHighlightStyle(v.registeredOwnerPerCor)}">${v.registeredOwnerPerCor ?? '—'}</dd>
+          <dt>Registered Owner (CSR)</dt><dd style="${chinaHighlightStyle(v.registeredOwnerPerCsr)}">${v.registeredOwnerPerCsr ?? '—'}</dd>
           <dt>Operator (COFR)</dt><dd>${v.operatorNameInCofr ?? '—'}</dd>
           <dt>Bridge Letter</dt><dd>${v.bridgeLetter ?? '—'}</dd>
-          <dt>Built Location</dt><dd>${v.builtLocation ?? '—'}</dd>
+          <dt>Built Location</dt><dd style="${chinaHighlightStyle(v.builtLocation)}">${v.builtLocation ?? '—'}</dd>
           <dt>Service Fees</dt><dd>${v.serviceFeesApplicable ?? '—'}</dd>
           <dt>Current Port / ETA / ETD</dt><dd>${cr.arrivalPort ?? '—'} / ${dateCell(cr.etaRaw, false)} / ${dateCell(cr.etdRaw, false)}</dd>
           <dt>Voyage / Transaction / Send To</dt><dd>${cr.voyageType ?? '—'} / ${cr.transactionType ?? '—'} / ${cr.sendTo ?? '—'}</dd>
-          <dt>Evidence records</dt><dd>${(v.evidence || []).length} (<a href="/evidence-review.html" target="_blank">review</a>)</dd>
           <dt>Open data quality issues</dt><dd>${(v.dataQualityIssues || []).map((i) => `${i.issueType}: ${i.message}`).join('<br>') || 'None'}</dd>
         </dl>
+
+        <h3 style="margin-top:20px; font-size:1rem;">Evidence Photos</h3>
+        <div id="modalEvidenceGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:10px; margin-top:10px;">
+          ${evidenceList.map((e) => `
+            <div style="text-align:center;">
+              <img src="/api/evidence/${e.id}/image" style="width:100%; height:70px; object-fit:contain; background:var(--bg-subtle); border-radius:4px; cursor:zoom-in;" class="modal-ev-thumb" data-full="/api/evidence/${e.id}/image" />
+              <div style="font-size:0.68rem; color:var(--text-600); margin-top:2px;">${e.reviewStatus === 'CONFIRMED' ? '✓ Confirmed' : e.reviewStatus.replace(/_/g,' ')}</div>
+              <button class="btn btn-secondary modal-ev-delete" data-id="${e.id}" style="font-size:0.68rem; padding:3px 6px; margin-top:2px;">Delete</button>
+            </div>
+          `).join('') || '<p style="color:var(--text-400); font-size:0.85rem;">No evidence photos yet.</p>'}
+        </div>
+        <div style="margin-top:12px;">
+          <label for="modalEvidenceUpload" class="btn btn-primary" style="cursor:pointer; display:inline-block;">+ Upload Photo</label>
+          <input type="file" id="modalEvidenceUpload" accept="image/png,image/jpeg,image/gif" style="display:none;" />
+          <span id="modalUploadStatus" style="font-size:0.8rem; color:var(--text-600); margin-left:8px;"></span>
+        </div>
       `;
+
+      modalBody.querySelectorAll('.modal-ev-thumb').forEach((img) => {
+        img.addEventListener('click', () => {
+          document.getElementById('lightboxImg').src = img.dataset.full;
+          document.getElementById('lightbox').style.display = 'flex';
+        });
+      });
+      modalBody.querySelectorAll('.modal-ev-delete').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Permanently delete this photo? This cannot be undone.')) return;
+          const res = await fetch(`/api/evidence/${btn.dataset.id}`, { method: 'DELETE', credentials: 'include' });
+          if (res.ok) {
+            await renderDetailModal(vesselId);
+            loadVessels();
+          } else {
+            alert('Could not delete photo.');
+          }
+        });
+      });
+
+      document.getElementById('modalEvidenceUpload').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const status = document.getElementById('modalUploadStatus');
+        status.textContent = 'Uploading…';
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('vesselId', vesselId);
+        try {
+          const res = await fetch('/api/evidence/upload', { method: 'POST', credentials: 'include', body: formData });
+          const data = await res.json();
+          if (!res.ok) { status.textContent = data.error || 'Upload failed.'; return; }
+          status.textContent = data.duplicate ? 'This exact photo was already on file.' : 'Uploaded.';
+          await renderDetailModal(vesselId);
+          loadVessels();
+        } catch {
+          status.textContent = 'Could not reach the server.';
+        }
+      });
     }
 
     function closeModal() { modalOverlay.classList.remove('show'); }

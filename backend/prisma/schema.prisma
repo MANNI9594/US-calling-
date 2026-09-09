@@ -221,8 +221,8 @@ model VesselEvidence {
 
   supersedesEvidenceId String? @map("supersedes_evidence_id") // set if this replaces an earlier evidence record for the same vessel
 
-  sourceImportBatchId String @map("source_import_batch_id")
-  importBatch         ImportBatch @relation(fields: [sourceImportBatchId], references: [id])
+  sourceImportBatchId String? @map("source_import_batch_id") // null for a manually-uploaded photo — not every evidence record comes from a file import
+  importBatch         ImportBatch? @relation(fields: [sourceImportBatchId], references: [id])
 
   isActive  Boolean  @default(true) @map("is_active") // false = superseded, kept for history, never deleted
   createdAt DateTime @default(now()) @map("created_at")

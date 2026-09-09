@@ -256,6 +256,21 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
       row.height = template.dataRowHeight;
     }
 
+    // Highlight in yellow when a China-related text ("China" as a
+    // substring, case-insensitive) appears in Built Location or either
+    // Registered Owner column — applied identically here and in the
+    // portal table, so the two can never disagree.
+    const chinaHighlightColumns: Array<{ colIdx: number; value: string | null }> = [
+      { colIdx: 7, value: r.vessel.registeredOwnerPerCor }, // 0-indexed position of "Registered Owners...as per CoR" in MASTER_HEADERS
+      { colIdx: 8, value: r.vessel.registeredOwnerPerCsr }, // "...as per CSR"
+      { colIdx: 12, value: r.vessel.builtLocation }, // "Built Location"
+    ];
+    for (const { colIdx, value } of chinaHighlightColumns) {
+      if (value && value.toLowerCase().includes('china')) {
+        row.getCell(colIdx + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
+      }
+    }
+
     if (r.evidenceStorageKey) {
       try {
         const imgBuffer = await storage.get(r.evidenceStorageKey);

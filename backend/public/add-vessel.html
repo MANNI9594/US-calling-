@@ -71,6 +71,13 @@
           <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
           <input type="text" id="summerDeadweightOrTeu" />
 
+          <label for="ballastOrLoaded">Ballast / Loaded</label>
+          <select id="ballastOrLoaded">
+            <option value="">—</option>
+            <option value="Ballast">Ballast</option>
+            <option value="Loaded">Loaded</option>
+          </select>
+
           <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
           <input type="text" id="registeredOwnerPerCor" />
 
@@ -93,6 +100,10 @@
             <option value="NO">No</option>
             <option value="NA">N/A</option>
           </select>
+          <div id="serviceFeesSuggestion" style="font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 10px; border-radius: 6px; margin-top: 6px; display: none;"></div>
+
+          <label for="evidencePhoto">Evidence Photo (optional)</label>
+          <input type="file" id="evidencePhoto" accept="image/png,image/jpeg,image/gif" />
         </fieldset>
 
         <div style="margin-top: 16px;">
@@ -118,6 +129,45 @@
 
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
       if (!res.ok) window.location.href = '/login.html';
+    });
+
+    let suggestTimer = null;
+    function scheduleServiceFeesSuggestion() {
+      clearTimeout(suggestTimer);
+      suggestTimer = setTimeout(fetchServiceFeesSuggestion, 400);
+    }
+    async function fetchServiceFeesSuggestion() {
+      const vesselType = document.getElementById('vesselType').value;
+      const summerDeadweightOrTeu = document.getElementById('summerDeadweightOrTeu').value;
+      const ballastOrLoaded = document.getElementById('ballastOrLoaded').value;
+      const note = document.getElementById('serviceFeesSuggestion');
+
+      if (!vesselType && !summerDeadweightOrTeu && !ballastOrLoaded) {
+        note.style.display = 'none';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/vessels/suggest-service-fees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ vesselType, summerDeadweightOrTeu, ballastOrLoaded }),
+        });
+        const result = await res.json();
+        if (!res.ok) return;
+
+        if (result.suggestion !== 'UNKNOWN') {
+          document.getElementById('serviceFeesApplicable').value = result.suggestion;
+        }
+        note.style.display = 'block';
+        note.textContent = `Suggested: ${result.reason}${result.voyageDistanceCaveatApplies ? ' Note: the voyage-distance exemption (<2000nm from the furthest foreign port) is NOT checked automatically — verify manually if it might apply.' : ''}`;
+      } catch {
+      }
+    }
+    ['vesselType', 'summerDeadweightOrTeu', 'ballastOrLoaded'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', scheduleServiceFeesSuggestion);
+      document.getElementById(id).addEventListener('change', scheduleServiceFeesSuggestion);
     });
 
     if (pendingOp.vesselName) {
@@ -246,6 +296,7 @@
         voyageType: pendingOp.voyageType || undefined,
         transactionType: pendingOp.transactionType || undefined,
         sendTo: pendingOp.sendTo || undefined,
+        ballastOrLoaded: document.getElementById('ballastOrLoaded').value || undefined,
       };
 
       try {
@@ -258,8 +309,21 @@
         const data = await res.json();
 
         if (res.ok) {
+          let photoNote = '';
+          const photoFile = document.getElementById('evidencePhoto').files[0];
+          if (photoFile) {
+            const photoForm = new FormData();
+            photoForm.append('file', photoFile);
+            photoForm.append('vesselId', data.vessel.id);
+            try {
+              const photoRes = await fetch('/api/evidence/upload', { method: 'POST', credentials: 'include', body: photoForm });
+              photoNote = photoRes.ok ? ' Evidence photo attached.' : ' (Vessel created, but the photo upload failed — you can add it later from the vessel detail view.)';
+            } catch {
+              photoNote = ' (Vessel created, but the photo upload failed — you can add it later from the vessel detail view.)';
+            }
+          }
           resultBox.className = 'alert alert-success show';
-          resultBox.textContent = `${data.vessel.vesselName} added to the VECS List${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged — check its profile)` : ''}.`;
+          resultBox.textContent = `${data.vessel.vesselName} added to the VECS List${data.dataQualityIssuesRaised > 0 ? ` (${data.dataQualityIssuesRaised} data quality issue(s) flagged — check its profile)` : ''}.${photoNote}`;
           form.style.display = 'none';
         } else {
           resultBox.className = 'alert alert-error show';

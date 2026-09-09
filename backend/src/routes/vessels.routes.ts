@@ -7,6 +7,7 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import { AppError } from '../middleware/errorHandler';
 import { resolveVesselIdentity } from '../services/import/vesselIdentity';
 import { checkAndRecordDate, checkEtdBeforeEta, checkPastEtd, checkImoPlausibility } from '../services/dataQuality/dataQualityService';
+import { computeServiceFeesExemption } from '../services/vessel/serviceFeesExemption';
 import { logAudit } from '../services/audit/auditService';
 import { broadcast } from '../services/realtime/eventBus';
 
@@ -114,6 +115,7 @@ const createVesselSchema = z.object({
   voyageType: z.string().trim().optional(),
   transactionType: z.string().trim().optional(),
   sendTo: z.string().trim().optional(),
+  ballastOrLoaded: z.string().trim().optional(),
 });
 
 /**
@@ -126,6 +128,33 @@ const createVesselSchema = z.object({
  * resolution as Master Import, and rejects with 409 if a vessel already
  * exists under that identity rather than creating a second copy.
  */
+/**
+ * Returns a SUGGESTED Service Fees Applicable value from Annex II
+ * exemption criteria (see serviceFeesExemption.ts for the full rule and
+ * its one genuine limitation — voyage distance can't be computed here).
+ * Never writes anything; the Add Vessel form uses this to pre-fill its
+ * dropdown while keeping it fully editable.
+ */
+const suggestServiceFeesSchema = z.object({
+  vesselType: z.string().optional(),
+  summerDeadweightOrTeu: z.string().optional(),
+  ballastOrLoaded: z.string().optional(),
+});
+
+vesselsRouter.post('/suggest-service-fees', asyncHandler(async (req, res) => {
+  const parsed = suggestServiceFeesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+  const result = computeServiceFeesExemption({
+    vesselType: parsed.data.vesselType ?? null,
+    capacityRaw: parsed.data.summerDeadweightOrTeu ?? null,
+    ballastOrLoaded: parsed.data.ballastOrLoaded ?? null,
+  });
+  res.json(result);
+}));
+
 vesselsRouter.post('/', asyncHandler(async (req, res) => {
   const parsed = createVesselSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -174,7 +203,7 @@ vesselsRouter.post('/', asyncHandler(async (req, res) => {
 
     let dataQualityIssuesRaised = 0;
 
-    if (input.arrivalPort || input.etaRaw || input.etdRaw || input.voyageType || input.transactionType || input.sendTo) {
+    if (input.arrivalPort || input.etaRaw || input.etdRaw || input.voyageType || input.transactionType || input.sendTo || input.ballastOrLoaded) {
       const callingRecord = await tx.vesselCallingRecord.create({
         data: {
           vesselId: vessel.id,
@@ -185,6 +214,7 @@ vesselsRouter.post('/', asyncHandler(async (req, res) => {
           voyageType: input.voyageType ?? null,
           transactionType: input.transactionType ?? null,
           sendTo: input.sendTo ?? null,
+          ballastOrLoaded: input.ballastOrLoaded ?? null,
           source: 'MANUAL_EDIT',
         },
       });

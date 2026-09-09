@@ -359,3 +359,9 @@ User noticed the US Calling List page had double-click-to-edit built in but no v
 ## US Calling List: inline edit now uses dropdowns for the same fixed-choice columns as the Add Vessel modal
 
 User pointed out that double-clicking Voyage Type/Transaction Type/Send To in Edit Mode still showed a plain text box, inconsistent with the dropdowns already added to the Add Vessel modal. Fixed: `startEdit()` now checks the field being edited and renders a `<select>` with the same option sets (Voyage Type: Foreign to US / US to US; Transaction Type: Initial / Update; Send To: NVMC / Review) whenever one of those three columns is double-clicked — Port and the date fields remain free-text/date-typed as before, since Port is intentionally open-ended.
+
+## US Calling List: Port suggestions on inline edit + Undo/Redo
+
+**Port suggestions in Edit Mode** — the type-ahead port list was only wired into the Add Vessel modal; double-clicking a Port cell in the table now also gets the same `<datalist>`-powered suggestions (shared by reference, not duplicated).
+
+**Undo/Redo added**, matching VECS List exactly — session-local only (reverts your own edits in your own browser tab this session, never a shared/global rollback), reusing the same `applyFieldChange` helper the inline-edit save flow already used, so undo/redo and normal editing can never disagree about how a field gets written.

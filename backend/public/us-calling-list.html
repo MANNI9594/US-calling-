@@ -135,6 +135,8 @@
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
       <button id="deleteSelectedBtn" class="btn btn-danger" disabled>Delete Selected</button>
+      <button id="undoBtn" class="btn btn-secondary" disabled title="Undo your last edit (this session only)">↶ Undo</button>
+      <button id="redoBtn" class="btn btn-secondary" disabled title="Redo (this session only)">↷ Redo</button>
       <span class="selection-count" id="selectionCount"></span>
     </div>
 
@@ -235,6 +237,58 @@
     let activeFilter = 'ALL';
     let sortKey = 'eta-asc';
     let editMode = false;
+
+    // Session-local undo/redo — only reverts YOUR own edits made in this
+    // browser tab this session, same pattern as VECS List.
+    const MAX_HISTORY = 50;
+    let undoStack = [];
+    let redoStack = [];
+
+    function updateUndoRedoButtons() {
+      document.getElementById('undoBtn').disabled = undoStack.length === 0;
+      document.getElementById('redoBtn').disabled = redoStack.length === 0;
+    }
+
+    async function applyFieldChange(id, field, value) {
+      const res = await fetch(`/api/us-calling-entries/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ field, value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not save change.');
+    }
+
+    document.getElementById('undoBtn').addEventListener('click', async () => {
+      const entry = undoStack.pop();
+      if (!entry) return;
+      try {
+        await applyFieldChange(entry.id, entry.field, entry.oldValue);
+        redoStack.push(entry);
+        if (redoStack.length > MAX_HISTORY) redoStack.shift();
+        await loadEntries();
+      } catch (err) {
+        alert('Could not undo: ' + (err.message || 'unknown error'));
+        undoStack.push(entry);
+      }
+      updateUndoRedoButtons();
+    });
+
+    document.getElementById('redoBtn').addEventListener('click', async () => {
+      const entry = redoStack.pop();
+      if (!entry) return;
+      try {
+        await applyFieldChange(entry.id, entry.field, entry.newValue);
+        undoStack.push(entry);
+        if (undoStack.length > MAX_HISTORY) undoStack.shift();
+        await loadEntries();
+      } catch (err) {
+        alert('Could not redo: ' + (err.message || 'unknown error'));
+        redoStack.push(entry);
+      }
+      updateUndoRedoButtons();
+    });
 
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
       if (!res.ok) window.location.href = '/login.html';
@@ -447,6 +501,8 @@
       if (FIELD_OPTIONS[field]) {
         const options = ['', ...FIELD_OPTIONS[field]];
         inputHtml = `<select>${options.map((o) => `<option value="${esc(o)}" ${o === currentValue ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
+      } else if (field === 'arrivalPort') {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" list="portSuggestions" placeholder="Type or pick a port" />`;
       } else {
         const placeholder = isDateField ? ' placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first"' : '';
         inputHtml = `<input type="text" value="${esc(currentValue)}"${placeholder} />`;
@@ -476,14 +532,11 @@
         }
 
         try {
-          const res = await fetch(`/api/us-calling-entries/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ field, value: newValue }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Could not save.');
+          await applyFieldChange(id, field, newValue);
+          undoStack.push({ id, field, oldValue: currentValue, newValue });
+          if (undoStack.length > MAX_HISTORY) undoStack.shift();
+          redoStack = []; // a fresh edit invalidates any pending redo path
+          updateUndoRedoButtons();
           await loadEntries();
         } catch (err) {
           alert(err.message || 'Could not reach the server.');

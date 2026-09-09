@@ -122,12 +122,12 @@
       <input type="text" id="searchInput" placeholder="Search vessel name..." style="width: 220px;" />
 
       <select id="sortSelect">
+        <option value="name-asc">Sort: Vessel Name (A-Z)</option>
+        <option value="name-desc">Sort: Vessel Name (Z-A)</option>
         <option value="eta-asc">Sort: ETA (earliest first)</option>
         <option value="eta-desc">Sort: ETA (latest first)</option>
         <option value="etd-asc">Sort: ETD (earliest first)</option>
         <option value="etd-desc">Sort: ETD (latest first)</option>
-        <option value="name-asc">Sort: Vessel Name (A-Z)</option>
-        <option value="name-desc">Sort: Vessel Name (Z-A)</option>
       </select>
 
       <button id="addRowBtn" class="btn btn-primary">+ Add Vessel</button>
@@ -235,7 +235,7 @@
     let selected = new Set();
     let searchTimer = null;
     let activeFilter = 'ALL';
-    let sortKey = 'eta-asc';
+    let sortKey = 'name-asc';
     let editMode = false;
 
     // Session-local undo/redo — only reverts YOUR own edits made in this

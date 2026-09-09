@@ -355,3 +355,7 @@ User noticed the US Calling List page had double-click-to-edit built in but no v
 **Manual ETA/ETD date range filters** — four date inputs (ETA from/to, ETD from/to) that combine with the existing filter chips and sort, so a specific window (e.g. "show me everything departing between these two dates") can be queried directly rather than only via the automatic Reminder filter.
 
 **Not yet tested live** — next actions: (1) add a vessel through the new modal and confirm all fields save correctly, especially that the date-picker-to-DD-MM-YYYY conversion produces the right stored value, (2) set an ETD date range and confirm the table narrows to matching entries.
+
+## US Calling List: inline edit now uses dropdowns for the same fixed-choice columns as the Add Vessel modal
+
+User pointed out that double-clicking Voyage Type/Transaction Type/Send To in Edit Mode still showed a plain text box, inconsistent with the dropdowns already added to the Add Vessel modal. Fixed: `startEdit()` now checks the field being edited and renders a `<select>` with the same option sets (Voyage Type: Foreign to US / US to US; Transaction Type: Initial / Update; Send To: NVMC / Review) whenever one of those three columns is double-clicked — Port and the date fields remain free-text/date-typed as before, since Port is intentionally open-ended.

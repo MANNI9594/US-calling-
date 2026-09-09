@@ -428,6 +428,12 @@
       document.getElementById('selectionCount').textContent = selected.size > 0 ? `${selected.size} selected` : '';
     }
 
+    const FIELD_OPTIONS = {
+      voyageType: ['Foreign to US', 'US to US'],
+      transactionType: ['Initial', 'Update'],
+      sendTo: ['NVMC', 'Review'],
+    };
+
     function startEdit(td) {
       if (td.classList.contains('editing')) return;
       const field = td.dataset.field;
@@ -437,11 +443,18 @@
       const originalHtml = td.innerHTML;
 
       const isDateField = field === 'etaRaw' || field === 'etdRaw';
-      const placeholder = isDateField ? ' placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first"' : '';
-      td.innerHTML = `<input type="text" value="${esc(currentValue)}"${placeholder} />`;
-      const inputEl = td.querySelector('input');
+      let inputHtml;
+      if (FIELD_OPTIONS[field]) {
+        const options = ['', ...FIELD_OPTIONS[field]];
+        inputHtml = `<select>${options.map((o) => `<option value="${esc(o)}" ${o === currentValue ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
+      } else {
+        const placeholder = isDateField ? ' placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first"' : '';
+        inputHtml = `<input type="text" value="${esc(currentValue)}"${placeholder} />`;
+      }
+      td.innerHTML = inputHtml;
+      const inputEl = td.querySelector('input, select');
       inputEl.focus();
-      inputEl.select();
+      if (inputEl.select) inputEl.select();
 
       let saved = false;
       const save = async () => {

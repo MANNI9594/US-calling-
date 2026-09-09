@@ -392,3 +392,7 @@ User pointed out that double-clicking Voyage Type/Transaction Type/Send To in Ed
 **China highlight extended to Registered Owner (CoR) and (CSR)** — same substring-match rule as Built Location (case-insensitive, matches "China" anywhere within a longer name, not just an exact match — verified against realistic long owner/shipyard names), applied consistently across the portal table, the vessel detail modal, and the exported Master XLSX. The highlight logic was generalized into one reusable function/column-index list rather than copy-pasted per column, so a future request to extend it to another column is a one-line addition, not a re-implementation.
 
 **Not yet tested live** — next actions: (1) add a vessel with a bulk carrier type, capacity, and ballast status and confirm the Service Fees suggestion matches expectations, including trying the exact DWT figures from the user's examples, (2) confirm Registered Owner columns highlight yellow for a China-based owner both on screen and in a fresh export.
+
+## Summer DWT/TEU highlighted yellow when Service Fees = Applicable
+
+Small consistent extension: the Summer Deadweight/TEU column (portal table, vessel detail modal, and exported Master XLSX) now also turns yellow whenever that vessel's Service Fees Applicable is "YES" — same color, same three-places-in-sync approach as the China highlights, so the visual flag lines up directly with the Service Fees suggestion feature added just before this.

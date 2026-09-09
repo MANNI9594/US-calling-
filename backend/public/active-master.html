@@ -442,6 +442,9 @@
     function chinaHighlightStyle(value) {
       return value && value.toLowerCase().includes('china') ? 'background: #fff200;' : '';
     }
+    function serviceFeesYellowStyle(serviceFeesApplicable) {
+      return serviceFeesApplicable === 'YES' ? 'background: #fff200;' : '';
+    }
 
     function renderTable() {
       const table = document.getElementById('masterTable');
@@ -471,7 +474,7 @@
             ${editableTd('imoNumber', v.imoNumber, v.imoNumber ?? '—')}
             ${editableTd('flag', v.flag, v.flag ?? '—')}
             ${editableTd('vesselType', v.vesselType, v.vesselType ?? '—')}
-            ${editableTd('summerDeadweightOrTeu', v.summerDeadweightOrTeu, v.summerDeadweightOrTeu ?? '—')}
+            ${editableTd('summerDeadweightOrTeu', v.summerDeadweightOrTeu, v.summerDeadweightOrTeu ?? '—', serviceFeesYellowStyle(v.serviceFeesApplicable))}
             ${editableTd('ballastOrLoaded', cr.ballastOrLoaded, cr.ballastOrLoaded ?? '—')}
             ${editableTd('registeredOwnerPerCor', v.registeredOwnerPerCor, v.registeredOwnerPerCor ?? '—', chinaHighlightStyle(v.registeredOwnerPerCor))}
             ${editableTd('registeredOwnerPerCsr', v.registeredOwnerPerCsr, v.registeredOwnerPerCsr ?? '—', chinaHighlightStyle(v.registeredOwnerPerCsr))}
@@ -644,7 +647,7 @@
           <dt>IMO Number</dt><dd>${v.imoNumber ?? '—'}${v.imoNumberPlausible === false ? ' <span class="badge badge-amber">implausible</span>' : ''}</dd>
           <dt>Flag</dt><dd>${v.flag ?? '—'}</dd>
           <dt>Vessel Type</dt><dd>${v.vesselType ?? '—'}</dd>
-          <dt>Summer Deadweight/TEU</dt><dd>${v.summerDeadweightOrTeu ?? '—'}</dd>
+          <dt>Summer Deadweight/TEU</dt><dd style="${serviceFeesYellowStyle(v.serviceFeesApplicable)}">${v.summerDeadweightOrTeu ?? '—'}</dd>
           <dt>Registered Owner (CoR)</dt><dd style="${chinaHighlightStyle(v.registeredOwnerPerCor)}">${v.registeredOwnerPerCor ?? '—'}</dd>
           <dt>Registered Owner (CSR)</dt><dd style="${chinaHighlightStyle(v.registeredOwnerPerCsr)}">${v.registeredOwnerPerCsr ?? '—'}</dd>
           <dt>Operator (COFR)</dt><dd>${v.operatorNameInCofr ?? '—'}</dd>

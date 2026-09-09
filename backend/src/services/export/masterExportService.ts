@@ -271,6 +271,13 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
       }
     }
 
+    // Summer Deadweight/TEU (colIdx 5) is also highlighted yellow whenever
+    // Service Fees is Applicable ("YES") — same rule, same color, applied
+    // identically to the portal table.
+    if (r.vessel.serviceFeesApplicable === 'YES') {
+      row.getCell(5 + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
+    }
+
     if (r.evidenceStorageKey) {
       try {
         const imgBuffer = await storage.get(r.evidenceStorageKey);

@@ -93,12 +93,15 @@
     </div>
 
     <div class="card" style="margin-top: 14px;">
-      <div class="dropzone-mini" id="dropzone">
-        <strong>Import / refresh from Excel</strong> — drop a .xlsx here, or click to choose one.
-        Existing vessels are updated by name match; nothing is duplicated.
-        <input type="file" id="fileInput" accept=".xlsx" />
+      <button id="importToggleBtn" class="btn btn-secondary" style="width: 100%; text-align: left; justify-content: flex-start;">▸ Import / Refresh from Excel</button>
+      <div id="importSection" style="display: none; margin-top: 14px;">
+        <div class="dropzone-mini" id="dropzone">
+          <strong>Import / refresh from Excel</strong> — drop a .xlsx here, or click to choose one.
+          Existing vessels are updated by name match; nothing is duplicated.
+          <input type="file" id="fileInput" accept=".xlsx" />
+        </div>
+        <div id="importStatus" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
       </div>
-      <div id="importStatus" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
     </div>
 
     <div class="controls-row">
@@ -733,6 +736,14 @@
       });
     });
     confirmOverlay.addEventListener('click', (e) => { if (e.target === confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+    document.getElementById('importToggleBtn').addEventListener('click', () => {
+      const section = document.getElementById('importSection');
+      const btn = document.getElementById('importToggleBtn');
+      const isOpen = section.style.display !== 'none';
+      section.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = (isOpen ? '▸' : '▾') + ' Import / Refresh from Excel';
+    });
 
     document.getElementById('filtersToggleBtn').addEventListener('click', () => {
       const section = document.getElementById('filtersSection');

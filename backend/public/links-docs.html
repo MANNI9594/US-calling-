@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Quick Links &amp; Docs</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  .item-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 8px; }
+  .item-row .info { font-size: 0.9rem; }
+  .item-row .info a { color: var(--blue-700); font-weight: 600; text-decoration: none; }
+  .item-row .info a:hover { text-decoration: underline; }
+  .item-row .meta { font-size: 0.78rem; color: var(--text-600); }
+  .item-row .actions { display: flex; gap: 8px; }
+  .item-row .actions button { font-size: 0.75rem; padding: 4px 8px; }
+  .dropzone-mini {
+    border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 16px;
+    text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
+  }
+  .dropzone-mini.dragover { background: var(--blue-50); border-color: var(--blue-600); }
+</style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/active-master.html">VECS List</a>
+    <a href="/us-calling-list.html">ENOA/D List</a>
+    <a href="/settings.html" class="active">Settings</a>
+  </nav>
+
+  <div class="page medium">
+    <div class="page-header">
+      <div>
+        <h1>Quick Links &amp; Docs</h1>
+        <p class="hint">A shared, growing reference for useful external links and important documents — anyone on the team can add to it.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Quick Links</h3>
+      <div style="display:flex; gap:8px; margin-top: 10px;">
+        <input type="text" id="newLinkLabel" placeholder="Label, e.g. NRC PLAN" style="flex:1;" />
+        <input type="text" id="newLinkUrl" placeholder="https://..." style="flex:2;" />
+        <button id="addLinkBtn" class="btn btn-primary">+ Add Link</button>
+      </div>
+      <div id="linksList" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Documents</h3>
+      <div style="display:flex; gap:8px; margin-top: 10px;">
+        <input type="text" id="newDocName" placeholder="Document name (optional — defaults to filename)" style="flex:1;" />
+      </div>
+      <div class="dropzone-mini" id="docDropzone" style="margin-top: 8px;">
+        <strong>Upload a document</strong> — drop a file here, or click to choose one.
+        <input type="file" id="docFileInput" style="display:none;" />
+      </div>
+      <div id="docUploadStatus" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
+      <div id="documentsList" style="margin-top: 10px;"></div>
+    </div>
+  </div>
+
+  <script>
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    function esc(v) {
+      return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
+    }
+
+    async function loadLinks() {
+      const res = await fetch('/api/links-docs/links', { credentials: 'include' });
+      const data = await res.json();
+      const list = document.getElementById('linksList');
+      if (!data.links || data.links.length === 0) {
+        list.innerHTML = '<p style="color:var(--text-400); font-size:0.85rem;">No links added yet.</p>';
+        return;
+      }
+      list.innerHTML = data.links.map((l) => `
+        <div class="item-row">
+          <div class="info"><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)}</a></div>
+          <div class="actions">
+            <button class="btn btn-secondary delete-link-btn" data-id="${l.id}">Delete</button>
+          </div>
+        </div>
+      `).join('');
+      list.querySelectorAll('.delete-link-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this link?')) return;
+          await fetch(`/api/links-docs/links/${btn.dataset.id}`, { method: 'DELETE', credentials: 'include' });
+          loadLinks();
+        });
+      });
+    }
+
+    document.getElementById('addLinkBtn').addEventListener('click', async () => {
+      const label = document.getElementById('newLinkLabel').value.trim();
+      const url = document.getElementById('newLinkUrl').value.trim();
+      if (!label || !url) { alert('Please enter both a label and a URL.'); return; }
+
+      const res = await fetch('/api/links-docs/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ label, url }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Could not add link. Make sure the URL starts with https://');
+        return;
+      }
+      document.getElementById('newLinkLabel').value = '';
+      document.getElementById('newLinkUrl').value = '';
+      loadLinks();
+    });
+
+    async function loadDocuments() {
+      const res = await fetch('/api/links-docs/documents', { credentials: 'include' });
+      const data = await res.json();
+      const list = document.getElementById('documentsList');
+      if (!data.documents || data.documents.length === 0) {
+        list.innerHTML = '<p style="color:var(--text-400); font-size:0.85rem;">No documents uploaded yet.</p>';
+        return;
+      }
+      list.innerHTML = data.documents.map((d) => `
+        <div class="item-row">
+          <div class="info">
+            <a href="/api/links-docs/documents/${d.id}/file" target="_blank" rel="noopener noreferrer">${esc(d.name)}</a>
+            <div class="meta">${(d.fileSizeBytes / 1024).toFixed(0)} KB · uploaded ${new Date(d.createdAt).toLocaleDateString()}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-secondary delete-doc-btn" data-id="${d.id}">Delete</button>
+          </div>
+        </div>
+      `).join('');
+      list.querySelectorAll('.delete-doc-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this document? This cannot be undone.')) return;
+          await fetch(`/api/links-docs/documents/${btn.dataset.id}`, { method: 'DELETE', credentials: 'include' });
+          loadDocuments();
+        });
+      });
+    }
+
+    const docDropzone = document.getElementById('docDropzone');
+    const docFileInput = document.getElementById('docFileInput');
+    docDropzone.addEventListener('click', () => docFileInput.click());
+    docDropzone.addEventListener('dragover', (e) => { e.preventDefault(); docDropzone.classList.add('dragover'); });
+    docDropzone.addEventListener('dragleave', () => docDropzone.classList.remove('dragover'));
+    docDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      docDropzone.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) uploadDocument(e.dataTransfer.files[0]);
+    });
+    docFileInput.addEventListener('change', (e) => { if (e.target.files[0]) uploadDocument(e.target.files[0]); });
+
+    async function uploadDocument(file) {
+      const status = document.getElementById('docUploadStatus');
+      status.textContent = 'Uploading…';
+      const formData = new FormData();
+      formData.append('file', file);
+      const name = document.getElementById('newDocName').value.trim();
+      if (name) formData.append('name', name);
+
+      try {
+        const res = await fetch('/api/links-docs/documents', { method: 'POST', credentials: 'include', body: formData });
+        const data = await res.json();
+        if (!res.ok) { status.textContent = data.error || 'Upload failed.'; return; }
+        status.textContent = 'Uploaded.';
+        document.getElementById('newDocName').value = '';
+        loadDocuments();
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      }
+    }
+
+    loadLinks();
+    loadDocuments();
+
+    const source = new EventSource('/api/events/stream');
+    source.addEventListener('links-docs-changed', () => { loadLinks(); loadDocuments(); });
+  </script>
+</body>
+</html>

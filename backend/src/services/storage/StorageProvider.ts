@@ -33,5 +33,5 @@ export interface StorageProvider {
    * this rather than string-concatenating, so the layout stays consistent
    * across providers (e.g. "evidence/2026/09/<uuid>.png").
    */
-  buildKey(namespace: 'master-imports' | 'us-calling-uploads' | 'evidence' | 'exports' | 'backups', filename: string): string;
+  buildKey(namespace: 'master-imports' | 'us-calling-uploads' | 'evidence' | 'exports' | 'backups' | 'documents', filename: string): string;
 }

@@ -471,3 +471,30 @@ model UsCallingListEntry {
   @@index([vesselNameNormalized])
   @@map("us_calling_list_entries")
 }
+
+// ----------------------------------------------------------------------------
+// QUICK LINKS & SHARED DOCUMENTS — a simple, team-editable reference page.
+// Deliberately basic models: no versioning, no folders — just a flat,
+// growing list either can add to, matching how the feature was requested.
+// ----------------------------------------------------------------------------
+
+model QuickLink {
+  id        String   @id @default(uuid())
+  label     String
+  url       String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("quick_links")
+}
+
+model SharedDocument {
+  id               String   @id @default(uuid())
+  name             String // display name, editable independent of the original filename
+  originalFilename String   @map("original_filename")
+  storageKey       String   @map("storage_key")
+  mimeType         String   @map("mime_type")
+  fileSizeBytes    Int      @map("file_size_bytes")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("shared_documents")
+}

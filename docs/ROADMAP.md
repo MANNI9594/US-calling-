@@ -424,3 +424,14 @@ User clarified the intent was never "highlight when Applicable" specifically —
 **Dynamic, learned type-ahead suggestions** for Port, Built Location, Registered Owner (CoR), Registered Owner (CSR), and Operator — `GET /api/vessels/distinct-values?field=X` returns every distinct non-null value currently in use for that field across the vessel database, and the frontend feeds it into a `<datalist>`. Unlike the earlier hardcoded Port suggestion list, this grows naturally: the first time anyone enters a new shipyard name or port, it becomes a suggestion for everyone from then on. Wired into VECS List's inline Edit Mode (all five fields) and the Add Vessel form (the four permanent-profile fields it has manual inputs for — Port isn't a manual field there, it only arrives via a pending-operational-data URL parameter). Suggestions refresh automatically right after a relevant field is edited, so a brand-new value is available immediately without a page reload.
 
 **Not yet tested live** — next actions: (1) double-click an ETA cell in Edit Mode on both lists and confirm the calendar picker appears and saves correctly, (2) type a brand-new Built Location value, save it, then open Edit Mode on a different vessel's Built Location and confirm the new value now appears as a suggestion.
+
+## Quick Links & Docs page + import widget consistency fix
+
+**Header consistency fixed**: ENOA/D List's import widget was always visible while VECS List's was collapsed-by-default, creating a visible layout mismatch the user caught in a screenshot. Both now use the identical collapsible pattern (toggle button, collapsed by default, same styling).
+
+**New "Quick Links & Docs" page** (`links-docs.html`, reached via a card on the Settings page rather than adding a 4th top-level nav item, keeping the just-decluttered nav at 3 links): a simple, team-editable shared reference.
+- **Quick Links**: add a label + URL (e.g. "NRC PLAN" → a Republic Services page), stored in a new `QuickLink` table. Every link opens in a new tab (`target="_blank" rel="noopener noreferrer"`), per explicit request.
+- **Documents**: upload any file type via drag-and-drop or click-to-browse; each becomes a clickable name that opens/downloads via a new `SharedDocument` table + the existing storage service (same provider-agnostic local/S3 storage already used for evidence images, extended with a new `documents` namespace).
+- Both sections support delete, and the page live-updates via the existing SSE infrastructure (`links-docs-changed` event) if someone else adds something while you have the page open.
+
+**Not yet tested live** — next actions: (1) after deploying, add the actual NRC PLAN link (https://www.republicservices.com/environmental-solutions/vessels) and any other links/docs the user has queued up, (2) confirm links open in a new tab and documents open/download correctly, (3) confirm both collapsible import widgets now look identical between VECS List and ENOA/D List.

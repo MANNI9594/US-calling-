@@ -82,6 +82,7 @@
     <span class="brand">US Calling <span>Master</span></span>
     <a href="/active-master.html" class="active">VECS List</a>
     <a href="/us-calling-list.html">ENOA/D List</a>
+    <a href="/links-docs.html">Quick Links &amp; Docs</a>
     <a href="/settings.html">Settings</a>
   </nav>
 
@@ -92,9 +93,7 @@
         <p class="hint">Dates shown as DD-MM-YYYY. Scroll horizontally/vertically for the full Master sheet.</p>
       </div>
       <div class="header-actions">
-        <a href="/add-vessel.html" class="btn btn-primary">+ Add Vessel</a>
         <a href="/us-calling-list.html" class="btn btn-secondary">⇄ Update from ENOA/D List</a>
-        <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
         <a href="/api/export/master-xlsx" class="btn btn-accent">⬇ Download Updated Master XLSX</a>
       </div>
     </div>
@@ -127,6 +126,8 @@
 
     <div class="controls-row">
       <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." style="width: 220px;" />
+      <a href="/add-vessel.html" class="btn btn-primary">+ Add Vessel</a>
+      <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
       <button id="actionBtn" class="btn btn-danger" disabled>Remove Selected</button>

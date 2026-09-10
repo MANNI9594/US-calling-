@@ -435,3 +435,9 @@ User clarified the intent was never "highlight when Applicable" specifically —
 - Both sections support delete, and the page live-updates via the existing SSE infrastructure (`links-docs-changed` event) if someone else adds something while you have the page open.
 
 **Not yet tested live** — next actions: (1) after deploying, add the actual NRC PLAN link (https://www.republicservices.com/environmental-solutions/vessels) and any other links/docs the user has queued up, (2) confirm links open in a new tab and documents open/download correctly, (3) confirm both collapsible import widgets now look identical between VECS List and ENOA/D List.
+
+## VECS List button positioning fixed to match ENOA/D List exactly
+
+Clarified after some back-and-forth: the actual complaint was purely about layout, not behavior — "+ Add Vessel" and "Edit Mode" sat in VECS List's top-right header area, while on ENOA/D List they sit in the same row as the search box. Moved both buttons out of `header-actions` and into `controls-row`, positioned immediately after the search input — now byte-for-byte the same button order and position as ENOA/D List (search → Add Vessel → Edit Mode → Select All → Clear Selection → Remove/Delete Selected → Undo → Redo → Filters toggle). "+ Add Vessel" remains a link to `add-vessel.html`, unchanged in behavior — this was a pure position fix, not a redesign of what clicking it does.
+
+Also corrected a Quick Links & Docs nav placement: per explicit "move, don't duplicate" instruction, it's now a genuine top-level nav item (VECS List | ENOA/D List | Quick Links & Docs | Settings) rather than a card inside Settings, removed from Settings to avoid the redundant duplicate entry point.

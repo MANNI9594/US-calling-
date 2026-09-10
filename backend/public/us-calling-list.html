@@ -267,7 +267,7 @@
         await applyFieldChange(entry.id, entry.field, entry.oldValue);
         redoStack.push(entry);
         if (redoStack.length > MAX_HISTORY) redoStack.shift();
-        await loadEntries();
+        await loadEntries(true);
       } catch (err) {
         alert('Could not undo: ' + (err.message || 'unknown error'));
         undoStack.push(entry);
@@ -282,7 +282,7 @@
         await applyFieldChange(entry.id, entry.field, entry.newValue);
         undoStack.push(entry);
         if (undoStack.length > MAX_HISTORY) undoStack.shift();
-        await loadEntries();
+        await loadEntries(true);
       } catch (err) {
         alert('Could not redo: ' + (err.message || 'unknown error'));
         redoStack.push(entry);
@@ -338,9 +338,15 @@
       applyFilterAndSort();
     });
 
-    async function loadEntries() {
+    async function loadEntries(silent) {
+      const scrollBox = document.querySelector('.scroll-box');
+      const scrollLeft = scrollBox.scrollLeft;
+      const scrollTop = scrollBox.scrollTop;
+
       const table = document.getElementById('entriesTable');
-      table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      if (!silent) {
+        table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      }
       const search = document.getElementById('searchInput').value.trim();
 
       const params = new URLSearchParams();
@@ -350,6 +356,9 @@
       const data = await res.json();
       entries = data.entries || [];
       applyFilterAndSort();
+
+      scrollBox.scrollLeft = scrollLeft;
+      scrollBox.scrollTop = scrollTop;
     }
 
     function getTime(raw) {
@@ -537,7 +546,7 @@
           if (undoStack.length > MAX_HISTORY) undoStack.shift();
           redoStack = []; // a fresh edit invalidates any pending redo path
           updateUndoRedoButtons();
-          await loadEntries();
+          await loadEntries(true);
         } catch (err) {
           alert(err.message || 'Could not reach the server.');
           td.classList.remove('editing');
@@ -559,7 +568,7 @@
       }
       selected.clear();
       updateDeleteButton();
-      loadEntries();
+      loadEntries(true);
     }
 
     document.getElementById('deleteSelectedBtn').addEventListener('click', () => deleteEntries(Array.from(selected)));
@@ -611,7 +620,7 @@
       });
       if (res.ok) {
         document.getElementById('addVesselOverlay').classList.remove('show');
-        loadEntries();
+        loadEntries(true);
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || 'Could not add entry.');
@@ -646,7 +655,7 @@
         if (!res.ok) { status.textContent = data.error || 'Import failed.'; return; }
         const s = data.summary;
         status.textContent = `Done: ${s.created} added, ${s.updated} updated (${s.totalRows} rows in file).`;
-        loadEntries();
+        loadEntries(true);
       } catch {
         status.textContent = 'Could not reach the server.';
       }
@@ -730,7 +739,7 @@
       const statusEl = document.getElementById('liveSyncStatus');
       const source = new EventSource('/api/events/stream');
       source.addEventListener('connected', () => { statusEl.textContent = '● Live'; statusEl.style.color = 'var(--green-600)'; });
-      source.addEventListener('us-calling-changed', () => loadEntries());
+      source.addEventListener('us-calling-changed', () => loadEntries(true));
       source.onerror = () => { statusEl.textContent = '○ Reconnecting…'; statusEl.style.color = 'var(--text-400)'; };
     }
     connectLiveSync();

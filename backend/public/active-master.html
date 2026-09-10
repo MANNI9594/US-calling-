@@ -295,7 +295,7 @@
         await applyFieldChange(entry.vesselId, entry.field, entry.oldValue);
         redoStack.push(entry);
         if (redoStack.length > MAX_HISTORY) redoStack.shift();
-        await loadVessels();
+        await loadVessels(true);
       } catch (err) {
         alert('Could not undo: ' + (err.message || 'unknown error'));
         undoStack.push(entry);
@@ -310,7 +310,7 @@
         await applyFieldChange(entry.vesselId, entry.field, entry.newValue);
         undoStack.push(entry);
         if (undoStack.length > MAX_HISTORY) undoStack.shift();
-        await loadVessels();
+        await loadVessels(true);
       } catch (err) {
         alert('Could not redo: ' + (err.message || 'unknown error'));
         redoStack.push(entry);
@@ -358,9 +358,15 @@
       document.getElementById('selectionCount').textContent = selected.size > 0 ? `${selected.size} selected` : '';
     }
 
-    async function loadVessels() {
+    async function loadVessels(silent) {
+      const scrollBox = document.querySelector('.scroll-box');
+      const scrollLeft = scrollBox.scrollLeft;
+      const scrollTop = scrollBox.scrollTop;
+
       const table = document.getElementById('masterTable');
-      table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      if (!silent) {
+        table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      }
       const search = document.getElementById('searchInput').value.trim();
 
       const params = new URLSearchParams({ status: activeTab, sortBy: 'eta', sortDir: 'asc' });
@@ -370,6 +376,11 @@
       const data = await res.json();
       vessels = data.vessels || [];
       applyFilterAndSort();
+
+      // Restore scroll position — a routine refresh after saving one cell
+      // shouldn't ever bounce you back to the top-left of a wide table.
+      scrollBox.scrollLeft = scrollLeft;
+      scrollBox.scrollTop = scrollTop;
     }
 
     function hasPastEtd(v) {
@@ -561,7 +572,7 @@
         isEditingNow = false;
         if (pendingRefresh) {
           pendingRefresh = false;
-          loadVessels();
+          loadVessels(true);
         }
       }
 
@@ -604,7 +615,7 @@
           redoStack = [];
           updateUndoRedoButtons();
           isEditingNow = false;
-          await loadVessels();
+          await loadVessels(true);
         } catch (err) {
           alert(err.message || 'Could not reach the server.');
           td.classList.remove('editing');
@@ -688,7 +699,7 @@
           const res = await fetch(`/api/evidence/${btn.dataset.id}`, { method: 'DELETE', credentials: 'include' });
           if (res.ok) {
             await renderDetailModal(vesselId);
-            loadVessels();
+            loadVessels(true);
           } else {
             alert('Could not delete photo.');
           }
@@ -709,7 +720,7 @@
           if (!res.ok) { status.textContent = data.error || 'Upload failed.'; return; }
           status.textContent = data.duplicate ? 'This exact photo was already on file.' : 'Uploaded.';
           await renderDetailModal(vesselId);
-          loadVessels();
+          loadVessels(true);
         } catch {
           status.textContent = 'Could not reach the server.';
         }
@@ -764,7 +775,7 @@
         message.textContent = `Done: ${count} vessel(s) ${activeTab === 'ACTIVE' ? 'removed and archived' : 'restored'}${data.skipped ? `, ${data.skipped} skipped (already in that state)` : ''}.`;
         selected.clear();
         updateActionButton();
-        loadVessels();
+        loadVessels(true);
       } catch {
         message.className = 'alert alert-error show';
         message.textContent = 'Could not reach the server.';
@@ -795,7 +806,7 @@
           pendingRefresh = true;
           return;
         }
-        loadVessels();
+        loadVessels(true);
       });
 
       source.onerror = () => {

@@ -64,17 +64,25 @@
   .dropdown-panel .panel-actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   .dropdown-panel .panel-actions button { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
   select#sortSelect { font-size: 0.85rem; padding: 8px 10px; }
+
+  .dropzone-mini {
+    border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 16px;
+    text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
+  }
+  .dropzone-mini.dragover { background: var(--blue-50); border-color: var(--blue-600); }
+  .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+  table.summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
+  table.summary-table th, table.summary-table td { text-align: left; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+  table.summary-table th { color: var(--text-600); font-weight: 600; width: 60%; }
+  ul.vessel-list { max-height: 160px; overflow-y: auto; margin: 6px 0; padding-left: 20px; font-size: 0.85rem; color: var(--text-600); }
 </style>
 </head>
 <body>
   <nav class="topbar">
     <span class="brand">US Calling <span>Master</span></span>
     <a href="/active-master.html" class="active">VECS List</a>
-    <a href="/import.html">Import Master Workbook</a>
-    <a href="/us-calling-list.html">US Calling List</a>
-    <a href="/evidence-review.html">Evidence Review</a>
-    <a href="/manage-team.html">Team</a>
-    <a href="/logout.html">Logout</a>
+    <a href="/us-calling-list.html">ENOA/D List</a>
+    <a href="/settings.html">Settings</a>
   </nav>
 
   <div class="page full">
@@ -85,9 +93,33 @@
       </div>
       <div class="header-actions">
         <a href="/add-vessel.html" class="btn btn-primary">+ Add Vessel</a>
-        <a href="/us-calling-list.html" class="btn btn-secondary">⇄ Update from US Calling List</a>
+        <a href="/us-calling-list.html" class="btn btn-secondary">⇄ Update from ENOA/D List</a>
         <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
         <a href="/api/export/master-xlsx" class="btn btn-accent">⬇ Download Updated Master XLSX</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 14px;">
+      <button id="importToggleBtn" class="btn btn-secondary" style="width: 100%; text-align: left; justify-content: flex-start;">▸ Import Master Workbook</button>
+      <div id="importSection" style="display: none; margin-top: 14px;">
+        <div class="dropzone-mini" id="masterDropzone">
+          <strong>Import / update from Master Excel</strong> — drop a .xlsx here, or click to choose one.
+          New vessels are created; existing vessels are never overwritten by this step.
+          <input type="file" id="masterFileInput" accept=".xlsx" style="display:none;" />
+        </div>
+        <div id="masterFileInfo" style="display:none; margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
+        <div class="btn-row" style="margin-top: 10px;">
+          <button id="masterPreviewBtn" class="btn btn-primary" disabled>Preview Import</button>
+        </div>
+        <div id="masterImportMessage" class="alert"></div>
+        <div id="masterPreviewCard" style="display:none; margin-top: 12px;">
+          <div id="masterPreviewSummary"></div>
+          <div class="btn-row">
+            <button id="masterCommitBtn" class="btn btn-accent">Confirm &amp; Import</button>
+            <button id="masterCancelBtn" class="btn btn-secondary">Cancel</button>
+          </div>
+        </div>
+        <div id="masterResultCard" style="display:none; margin-top: 12px;"></div>
       </div>
     </div>
 
@@ -95,30 +127,34 @@
 
     <div class="controls-row">
       <input type="text" id="searchInput" placeholder="Search vessel name or IMO..." style="width: 220px;" />
-
-      <div class="chip-row" id="filterChips"></div>
-
-      <select id="sortSelect">
-        <option value="eta-asc">Sort: ETA (earliest first)</option>
-        <option value="eta-desc">Sort: ETA (latest first)</option>
-        <option value="etd-asc">Sort: ETD (earliest first)</option>
-        <option value="etd-desc">Sort: ETD (latest first)</option>
-        <option value="name-asc">Sort: Vessel Name (A-Z)</option>
-        <option value="name-desc">Sort: Vessel Name (Z-A)</option>
-        <option value="imo-asc">Sort: IMO Number</option>
-      </select>
-
-      <div class="dropdown-wrap">
-        <button id="columnsBtn" class="btn btn-secondary">☰ Columns</button>
-        <div id="columnsPanel" class="dropdown-panel"></div>
-      </div>
-
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
       <button id="actionBtn" class="btn btn-danger" disabled>Remove Selected</button>
       <button id="undoBtn" class="btn btn-secondary" disabled title="Undo your last edit (this session only)">↶ Undo</button>
       <button id="redoBtn" class="btn btn-secondary" disabled title="Redo (this session only)">↷ Redo</button>
       <span class="selection-count" id="selectionCount"></span>
+      <button id="filtersToggleBtn" class="btn btn-secondary" style="margin-left: auto;">▸ Filters &amp; Sort</button>
+    </div>
+
+    <div id="filtersSection" style="display: none;">
+      <div class="controls-row">
+        <div class="chip-row" id="filterChips"></div>
+
+        <select id="sortSelect">
+          <option value="eta-asc">Sort: ETA (earliest first)</option>
+          <option value="eta-desc">Sort: ETA (latest first)</option>
+          <option value="etd-asc">Sort: ETD (earliest first)</option>
+          <option value="etd-desc">Sort: ETD (latest first)</option>
+          <option value="name-asc">Sort: Vessel Name (A-Z)</option>
+          <option value="name-desc">Sort: Vessel Name (Z-A)</option>
+          <option value="imo-asc">Sort: IMO Number</option>
+        </select>
+
+        <div class="dropdown-wrap">
+          <button id="columnsBtn" class="btn btn-secondary">☰ Columns</button>
+          <div id="columnsPanel" class="dropdown-panel"></div>
+        </div>
+      </div>
     </div>
 
     <div class="controls-row" style="margin-top: -6px;">
@@ -141,6 +177,12 @@
   </div>
 
   <div id="lightbox"><img id="lightboxImg" src="" /></div>
+
+  <datalist id="suggestions-arrivalPort"></datalist>
+  <datalist id="suggestions-builtLocation"></datalist>
+  <datalist id="suggestions-registeredOwnerPerCor"></datalist>
+  <datalist id="suggestions-registeredOwnerPerCsr"></datalist>
+  <datalist id="suggestions-operatorNameInCofr"></datalist>
 
   <script>
     let activeTab = 'ACTIVE';
@@ -403,6 +445,18 @@
     function esc(v) {
       return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
     }
+    function ddMmYyyyToIso(raw) {
+      if (!raw) return '';
+      const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
+      if (!match) return '';
+      const [, dd, mm, yyyy] = match;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    function isoToDdMmYyyy(iso) {
+      if (!iso) return '';
+      const [yyyy, mm, dd] = iso.split('-');
+      return `${dd}-${mm}-${yyyy}`;
+    }
 
     function getEtaTime(v) {
       const cr = (v.callingRecords || [])[0];
@@ -454,7 +508,7 @@
       return value && value.toLowerCase().includes('china') ? 'background: #fff200;' : '';
     }
     function serviceFeesYellowStyle(serviceFeesApplicable) {
-      return serviceFeesApplicable === 'YES' ? 'background: #fff200;' : '';
+      return serviceFeesApplicable === 'YES' || serviceFeesApplicable === 'NO' ? 'background: #fff200;' : '';
     }
 
     function renderTable() {
@@ -493,7 +547,7 @@
             ${editableTd('bridgeLetter', v.bridgeLetter, v.bridgeLetter ?? '—')}
             <td data-colkey="evidence">${evidenceCell}</td>
             ${editableTd('builtLocation', v.builtLocation, v.builtLocation ?? '—', chinaHighlightStyle(v.builtLocation))}
-            ${editableTd('serviceFeesApplicable', v.serviceFeesApplicable, v.serviceFeesApplicable ?? '—')}
+            ${editableTd('serviceFeesApplicable', v.serviceFeesApplicable, v.serviceFeesApplicable ?? '—', serviceFeesYellowStyle(v.serviceFeesApplicable))}
             ${editableTd('arrivalPort', cr.arrivalPort, cr.arrivalPort ?? '—')}
             ${editableTd('etaRaw', cr.etaRaw, dateCell(cr.etaRaw, false))}
             ${editableTd('etdRaw', cr.etdRaw, dateCell(cr.etdRaw, etdIsPastDue))}
@@ -557,6 +611,19 @@
       document.getElementById('lightbox').style.display = 'none';
     });
 
+    function ddMmYyyyToIso(raw) {
+      if (!raw) return '';
+      const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
+      if (!match) return ''; // unparseable existing value — picker just starts blank rather than showing garbage
+      const [, dd, mm, yyyy] = match;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    function isoToDdMmYyyy(iso) {
+      if (!iso) return '';
+      const [yyyy, mm, dd] = iso.split('-');
+      return `${dd}-${mm}-${yyyy}`;
+    }
+
     function startEdit(td) {
       if (td.classList.contains('editing')) return;
       const field = td.dataset.field;
@@ -581,7 +648,9 @@
         const options = ['UNKNOWN', 'YES', 'NO', 'NA'];
         inputHtml = `<select>${options.map((o) => `<option value="${o}" ${o === currentValue ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
       } else if (field === 'etaRaw' || field === 'etdRaw') {
-        inputHtml = `<input type="text" value="${esc(currentValue)}" placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first, e.g. 01-09-2026 = 1 September 2026" />`;
+        inputHtml = `<input type="date" value="${ddMmYyyyToIso(currentValue)}" />`;
+      } else if (DYNAMIC_SUGGESTION_FIELDS.includes(field)) {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" list="suggestions-${field}" />`;
       } else {
         inputHtml = `<input type="text" value="${esc(currentValue)}" />`;
       }
@@ -591,14 +660,10 @@
       if (inputEl.select) inputEl.select();
 
       let saved = false;
+      const isDateField = field === 'etaRaw' || field === 'etdRaw';
       const save = async () => {
         if (saved) return;
-        const newValue = inputEl.value;
-
-        if ((field === 'etaRaw' || field === 'etdRaw') && newValue && !/^\d{2}[-.]\d{2}[-.]\d{4}$/.test(newValue)) {
-          const proceed = confirm(`"${newValue}" doesn't look like DD-MM-YYYY. Save it exactly as typed anyway?`);
-          if (!proceed) { inputEl.focus(); return; }
-        }
+        const newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
         saved = true;
 
         if (newValue === currentValue) {
@@ -616,6 +681,7 @@
           updateUndoRedoButtons();
           isEditingNow = false;
           await loadVessels(true);
+          if (DYNAMIC_SUGGESTION_FIELDS.includes(field)) loadDynamicSuggestions();
         } catch (err) {
           alert(err.message || 'Could not reach the server.');
           td.classList.remove('editing');
@@ -664,7 +730,7 @@
           <dt>Operator (COFR)</dt><dd>${v.operatorNameInCofr ?? '—'}</dd>
           <dt>Bridge Letter</dt><dd>${v.bridgeLetter ?? '—'}</dd>
           <dt>Built Location</dt><dd style="${chinaHighlightStyle(v.builtLocation)}">${v.builtLocation ?? '—'}</dd>
-          <dt>Service Fees</dt><dd>${v.serviceFeesApplicable ?? '—'}</dd>
+          <dt>Service Fees</dt><dd style="${serviceFeesYellowStyle(v.serviceFeesApplicable)}">${v.serviceFeesApplicable ?? '—'}</dd>
           <dt>Current Port / ETA / ETD</dt><dd>${cr.arrivalPort ?? '—'} / ${dateCell(cr.etaRaw, false)} / ${dateCell(cr.etdRaw, false)}</dd>
           <dt>Voyage / Transaction / Send To</dt><dd>${cr.voyageType ?? '—'} / ${cr.transactionType ?? '—'} / ${cr.sendTo ?? '—'}</dd>
           <dt>Open data quality issues</dt><dd>${(v.dataQualityIssues || []).map((i) => `${i.issueType}: ${i.message}`).join('<br>') || 'None'}</dd>
@@ -782,10 +848,207 @@
       }
     });
 
+    // --- Collapsible sections ---
+    document.getElementById('importToggleBtn').addEventListener('click', () => {
+      const section = document.getElementById('importSection');
+      const btn = document.getElementById('importToggleBtn');
+      const isOpen = section.style.display !== 'none';
+      section.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = (isOpen ? '▸' : '▾') + ' Import Master Workbook';
+    });
+    document.getElementById('filtersToggleBtn').addEventListener('click', () => {
+      const section = document.getElementById('filtersSection');
+      const btn = document.getElementById('filtersToggleBtn');
+      const isOpen = section.style.display !== 'none';
+      section.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = (isOpen ? '▸' : '▾') + ' Filters & Sort';
+    });
+
+    // --- Inline Master Workbook import (dropzone -> preview -> commit) ---
+    // Reuses the exact same backend endpoints the old standalone Import
+    // page used; this widget replaces that page entirely, per explicit
+    // request, rather than duplicating its logic in two places.
+    let masterSelectedFile = null;
+    let masterPreviewData = null;
+
+    const masterDropzone = document.getElementById('masterDropzone');
+    const masterFileInput = document.getElementById('masterFileInput');
+    const masterFileInfo = document.getElementById('masterFileInfo');
+    const masterPreviewBtn = document.getElementById('masterPreviewBtn');
+    const masterImportMessage = document.getElementById('masterImportMessage');
+    const masterPreviewCard = document.getElementById('masterPreviewCard');
+    const masterPreviewSummary = document.getElementById('masterPreviewSummary');
+    const masterCommitBtn = document.getElementById('masterCommitBtn');
+    const masterCancelBtn = document.getElementById('masterCancelBtn');
+    const masterResultCard = document.getElementById('masterResultCard');
+
+    function showMasterMessage(text, type) {
+      masterImportMessage.className = `alert alert-${type} show`;
+      masterImportMessage.textContent = text;
+    }
+    function clearMasterMessage() {
+      masterImportMessage.className = 'alert';
+    }
+
+    function setMasterFile(file) {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        showMasterMessage('Only .xlsx files are accepted.', 'error');
+        return;
+      }
+      masterSelectedFile = file;
+      masterFileInfo.style.display = 'block';
+      masterFileInfo.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+      masterPreviewBtn.disabled = false;
+      masterPreviewCard.style.display = 'none';
+      masterResultCard.style.display = 'none';
+      clearMasterMessage();
+    }
+
+    masterDropzone.addEventListener('click', () => masterFileInput.click());
+    masterFileInput.addEventListener('change', (e) => setMasterFile(e.target.files[0]));
+    masterDropzone.addEventListener('dragover', (e) => { e.preventDefault(); masterDropzone.classList.add('dragover'); });
+    masterDropzone.addEventListener('dragleave', () => masterDropzone.classList.remove('dragover'));
+    masterDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      masterDropzone.classList.remove('dragover');
+      setMasterFile(e.dataTransfer.files[0]);
+    });
+
+    masterPreviewBtn.addEventListener('click', async () => {
+      if (!masterSelectedFile) return;
+      masterPreviewBtn.disabled = true;
+      masterPreviewBtn.textContent = 'Analyzing…';
+      clearMasterMessage();
+
+      const formData = new FormData();
+      formData.append('file', masterSelectedFile);
+
+      try {
+        const res = await fetch('/api/import/master-workbook/preview', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showMasterMessage(data.error || 'Preview failed.', 'error');
+          return;
+        }
+
+        masterPreviewData = data.preview;
+        renderMasterPreview(masterPreviewData);
+      } catch {
+        showMasterMessage('Could not reach the server.', 'error');
+      } finally {
+        masterPreviewBtn.disabled = false;
+        masterPreviewBtn.textContent = 'Preview Import';
+      }
+    });
+
+    function renderMasterPreview(p) {
+      const rows = [
+        ['Sheet name', p.sheetName],
+        ['Vessel rows found', p.rowCount],
+        ['Total image anchors', p.imageCount],
+        ['Cleanly-anchored images (provisional, still NEEDS_REVIEW)', p.cleanImageAssociationCount],
+        ['Images requiring manual/OCR review (pileup)', p.pileupImageCount],
+        ['New vessels to be created', p.vesselsNew.length],
+        ['Vessels already in database (will be skipped, not overwritten)', p.vesselsAlreadyInDatabase.length],
+      ];
+
+      let html = '<table class="summary-table">' + rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('') + '</table>';
+
+      if (p.vesselsAlreadyInDatabase.length > 0) {
+        html += `<p><strong>Already in database (skipped):</strong></p><ul class="vessel-list">${p.vesselsAlreadyInDatabase.map((v) => `<li>${v}</li>`).join('')}</ul>`;
+      }
+      if (p.readerWarnings.length > 0) {
+        html += `<p><span class="badge badge-amber">Warnings</span></p><ul class="vessel-list">${p.readerWarnings.map((w) => `<li>${w}</li>`).join('')}</ul>`;
+      }
+
+      masterPreviewSummary.innerHTML = html;
+      masterPreviewCard.style.display = 'block';
+      masterResultCard.style.display = 'none';
+    }
+
+    masterCancelBtn.addEventListener('click', () => {
+      masterPreviewCard.style.display = 'none';
+      masterPreviewData = null;
+    });
+
+    masterCommitBtn.addEventListener('click', async () => {
+      if (!masterPreviewData) return;
+      masterCommitBtn.disabled = true;
+      masterCommitBtn.textContent = 'Importing…';
+
+      try {
+        const res = await fetch('/api/import/master-workbook/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            storageKey: masterPreviewData.storageKey,
+            originalFilename: masterPreviewData.originalFilename,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showMasterMessage(data.error || 'Import failed.', 'error');
+          return;
+        }
+
+        const s = data.summary;
+        masterResultCard.innerHTML = `
+          <p><span class="badge badge-green">Import complete</span></p>
+          <table class="summary-table">
+            <tr><th>Vessels created</th><td>${s.vesselsCreated}</td></tr>
+            <tr><th>Vessels skipped (already existed)</th><td>${s.vesselsSkippedAlreadyExists}</td></tr>
+            <tr><th>Evidence cleanly associated (still needs your review)</th><td>${s.evidenceCleanlyAssociated}</td></tr>
+            <tr><th>Evidence sent to Unassigned pool</th><td>${s.evidenceUnassigned}</td></tr>
+            <tr><th>Duplicate evidence skipped (already on file)</th><td>${s.evidenceSkippedDuplicate}</td></tr>
+            <tr><th>Data quality issues flagged</th><td>${s.dataQualityIssuesRaised}</td></tr>
+            <tr><th>Past-ETD vessels flagged (not removed)</th><td>${s.pastEtdCount}</td></tr>
+          </table>
+          <p style="margin-top:12px;"><a href="/evidence-review.html" target="_blank">Go review the evidence images →</a></p>
+        `;
+        masterResultCard.style.display = 'block';
+        masterPreviewCard.style.display = 'none';
+        masterSelectedFile = null;
+        masterFileInfo.style.display = 'none';
+        masterPreviewBtn.disabled = true;
+        loadVessels();
+      } catch {
+        showMasterMessage('Could not reach the server during import.', 'error');
+      } finally {
+        masterCommitBtn.disabled = false;
+        masterCommitBtn.textContent = 'Confirm & Import';
+      }
+    });
+
+    const DYNAMIC_SUGGESTION_FIELDS = ['arrivalPort', 'builtLocation', 'registeredOwnerPerCor', 'registeredOwnerPerCsr', 'operatorNameInCofr'];
+
+    async function loadDynamicSuggestions() {
+      for (const field of DYNAMIC_SUGGESTION_FIELDS) {
+        try {
+          const res = await fetch(`/api/vessels/distinct-values?field=${field}`, { credentials: 'include' });
+          const data = await res.json();
+          const datalist = document.getElementById(`suggestions-${field}`);
+          if (datalist && data.values) {
+            datalist.innerHTML = data.values.map((v) => `<option value="${esc(v)}">`).join('');
+          }
+        } catch {
+          // Suggestions are a convenience, not a requirement — fail silently.
+        }
+      }
+    }
+
     renderTabs();
     renderFilterChips();
     renderColumnsPanel();
     loadVessels();
+    loadDynamicSuggestions();
 
     // --- Live sync: Server-Sent Events push a 'vessels-changed' message
     // whenever anyone (including you, in another tab) mutates vessel data.

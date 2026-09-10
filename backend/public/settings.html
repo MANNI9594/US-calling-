@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — Settings</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  .settings-links { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+  .settings-links a {
+    display: flex; flex-direction: column; gap: 4px; padding: 16px 20px; border-radius: var(--radius);
+    background: #fff; border: 1px solid var(--border); box-shadow: var(--shadow-sm); text-decoration: none;
+    color: var(--text-900); min-width: 160px; flex: 1;
+  }
+  .settings-links a:hover { border-color: var(--blue-600); box-shadow: var(--shadow-md); }
+  .settings-links a strong { font-size: 0.95rem; }
+  .settings-links a span { font-size: 0.8rem; color: var(--text-600); }
+</style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/active-master.html">VECS List</a>
+    <a href="/us-calling-list.html">ENOA/D List</a>
+    <a href="/settings.html" class="active">Settings</a>
+  </nav>
+
+  <div class="page medium">
+    <div class="page-header">
+      <div>
+        <h1>Settings</h1>
+        <p class="hint">Team management, evidence review, maintenance tools, and account actions.</p>
+      </div>
+    </div>
+
+    <div class="settings-links">
+      <a href="/manage-team.html">
+        <strong>👥 Team</strong>
+        <span>Add teammates, change or reset passwords</span>
+      </a>
+      <a href="/evidence-review.html">
+        <strong>🖼 Evidence Review</strong>
+        <span>Review, confirm, or reassign vessel evidence images</span>
+      </a>
+      <a href="/logout.html">
+        <strong>🚪 Logout</strong>
+        <span>Sign out of this account</span>
+      </a>
+    </div>
+
+    <div class="card">
+      <h3>Backfill Missing Fields</h3>
+      <p class="hint">
+        If some vessels are missing a permanent field (e.g. Operator Name) that's actually present
+        in your Master workbook, this re-checks the last Master import and fills in any blank field —
+        it never overwrites a field that already has a value.
+      </p>
+      <button id="backfillBtn" class="btn btn-primary">Run Backfill</button>
+      <span id="backfillStatus" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-600);"></span>
+    </div>
+
+    <div class="card">
+      <h3>Clean Up Stale Flags</h3>
+      <p class="hint">
+        A "1 flag(s)" warning can occasionally stay stuck even after the underlying date was
+        already fixed by a later update. This one-time sweep re-checks every vessel's flags
+        against its actual current data and resolves any that no longer apply.
+      </p>
+      <button id="cleanupBtn" class="btn btn-primary">Run Cleanup</button>
+      <span id="cleanupStatus" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-600);"></span>
+    </div>
+
+    <div class="card">
+      <h3>Master Import History</h3>
+      <div id="history">Loading…</div>
+    </div>
+  </div>
+
+  <script>
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    document.getElementById('backfillBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('backfillBtn');
+      const status = document.getElementById('backfillStatus');
+      btn.disabled = true;
+      status.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/import/backfill-missing-fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.error || 'Backfill failed.';
+          return;
+        }
+        const s = data.summary;
+        status.textContent = `Checked ${s.vesselsChecked} vessels, updated ${s.vesselsUpdated}, filled in ${s.fieldsBackfilled} field(s) total.`;
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('cleanupBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('cleanupBtn');
+      const status = document.getElementById('cleanupStatus');
+      btn.disabled = true;
+      status.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/import/cleanup-stale-flags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.error || 'Cleanup failed.';
+          return;
+        }
+        const s = data.summary;
+        status.textContent = `Checked ${s.vesselsChecked} vessel(s) with open flags, resolved ${s.issuesResolved} stale flag(s).`;
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    async function loadHistory() {
+      const historyDiv = document.getElementById('history');
+      try {
+        const res = await fetch('/api/import/batches?type=MASTER_IMPORT&limit=10', { credentials: 'include' });
+        const data = await res.json();
+        if (!res.ok || !data.batches || data.batches.length === 0) {
+          historyDiv.textContent = 'No Master imports yet.';
+          return;
+        }
+        historyDiv.innerHTML = '<div class="table-wrap"><table class="data-table"><tr><th>File</th><th>Date</th><th>Status</th><th>Summary</th></tr>' +
+          data.batches.map((b) => {
+            const badgeClass = b.status === 'COMPLETED' ? 'badge-green' : b.status === 'FAILED' ? 'badge-red' : 'badge-amber';
+            const s = b.summaryJson;
+            const summaryText = s ? `${s.vesselsCreated} created, ${s.vesselsSkippedAlreadyExists} skipped` : (b.errorMessage || '—');
+            return `<tr><td>${b.originalFilename ?? '—'}</td><td>${new Date(b.createdAt).toLocaleString()}</td><td><span class="badge ${badgeClass}">${b.status}</span></td><td>${summaryText}</td></tr>`;
+          }).join('') + '</table></div>';
+      } catch {
+        historyDiv.textContent = 'Could not load import history.';
+      }
+    }
+    loadHistory();
+  </script>
+</body>
+</html>

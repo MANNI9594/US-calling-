@@ -271,11 +271,14 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
       }
     }
 
-    // Summer Deadweight/TEU (colIdx 5) is also highlighted yellow whenever
-    // Service Fees is Applicable ("YES") — same rule, same color, applied
-    // identically to the portal table.
-    if (r.vessel.serviceFeesApplicable === 'YES') {
+    // Summer Deadweight/TEU (colIdx 5) and Service Fees Applicable
+    // (colIdx 13) both turn yellow whenever a definitive Service Fees
+    // decision has been made (YES or NO) — Unknown/NA stay unhighlighted,
+    // since those haven't actually been evaluated yet. Same rule applied
+    // identically in the portal table.
+    if (r.vessel.serviceFeesApplicable === 'YES' || r.vessel.serviceFeesApplicable === 'NO') {
       row.getCell(5 + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
+      row.getCell(13 + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
     }
 
     if (r.evidenceStorageKey) {

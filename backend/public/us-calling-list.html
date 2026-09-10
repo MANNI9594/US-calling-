@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>US Calling Master Manager — US Calling List</title>
+<title>US Calling Master Manager — ENOA/D List</title>
 <link rel="stylesheet" href="/styles.css" />
 <script src="/date-format.js"></script>
 <style>
@@ -73,17 +73,14 @@
   <nav class="topbar">
     <span class="brand">US Calling <span>Master</span></span>
     <a href="/active-master.html">VECS List</a>
-    <a href="/import.html">Import Master Workbook</a>
-    <a href="/us-calling-list.html" class="active">US Calling List</a>
-    <a href="/evidence-review.html">Evidence Review</a>
-    <a href="/manage-team.html">Team</a>
-    <a href="/logout.html">Logout</a>
+    <a href="/us-calling-list.html" class="active">ENOA/D List</a>
+    <a href="/settings.html">Settings</a>
   </nav>
 
   <div class="page full">
     <div class="page-header">
       <div>
-        <h1>US Calling List</h1>
+        <h1>ENOA/D List</h1>
         <p class="hint">
           The working day-to-day list. Edit rows directly, or import a fresh file below — either way, click
           "Apply to VECS List" whenever you're ready to push these changes through.
@@ -104,32 +101,8 @@
       <div id="importStatus" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
     </div>
 
-    <div class="chip-row" id="filterChips" style="margin-top: 16px;"></div>
-
-    <div class="date-filter-row" style="margin-top: 10px;">
-      <label for="etaFromFilter">ETA from</label>
-      <input type="date" id="etaFromFilter" />
-      <label for="etaToFilter">to</label>
-      <input type="date" id="etaToFilter" />
-      <label for="etdFromFilter" style="margin-left: 14px;">ETD from</label>
-      <input type="date" id="etdFromFilter" />
-      <label for="etdToFilter">to</label>
-      <input type="date" id="etdToFilter" />
-      <button id="clearDateFiltersBtn" class="btn btn-secondary" style="font-size: 0.78rem; padding: 5px 10px;">Clear Dates</button>
-    </div>
-
     <div class="controls-row">
       <input type="text" id="searchInput" placeholder="Search vessel name..." style="width: 220px;" />
-
-      <select id="sortSelect">
-        <option value="name-asc">Sort: Vessel Name (A-Z)</option>
-        <option value="name-desc">Sort: Vessel Name (Z-A)</option>
-        <option value="eta-asc">Sort: ETA (earliest first)</option>
-        <option value="eta-desc">Sort: ETA (latest first)</option>
-        <option value="etd-asc">Sort: ETD (earliest first)</option>
-        <option value="etd-desc">Sort: ETD (latest first)</option>
-      </select>
-
       <button id="addRowBtn" class="btn btn-primary">+ Add Vessel</button>
       <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
@@ -138,6 +111,34 @@
       <button id="undoBtn" class="btn btn-secondary" disabled title="Undo your last edit (this session only)">↶ Undo</button>
       <button id="redoBtn" class="btn btn-secondary" disabled title="Redo (this session only)">↷ Redo</button>
       <span class="selection-count" id="selectionCount"></span>
+      <button id="filtersToggleBtn" class="btn btn-secondary" style="margin-left: auto;">▸ Filters &amp; Sort</button>
+    </div>
+
+    <div id="filtersSection" style="display: none;">
+      <div class="chip-row" id="filterChips" style="margin-top: 10px;"></div>
+
+      <div class="date-filter-row" style="margin-top: 10px;">
+        <label for="etaFromFilter">ETA from</label>
+        <input type="date" id="etaFromFilter" />
+        <label for="etaToFilter">to</label>
+        <input type="date" id="etaToFilter" />
+        <label for="etdFromFilter" style="margin-left: 14px;">ETD from</label>
+        <input type="date" id="etdFromFilter" />
+        <label for="etdToFilter">to</label>
+        <input type="date" id="etdToFilter" />
+        <button id="clearDateFiltersBtn" class="btn btn-secondary" style="font-size: 0.78rem; padding: 5px 10px;">Clear Dates</button>
+      </div>
+
+      <div class="controls-row" style="margin-top: 10px;">
+        <select id="sortSelect">
+          <option value="name-asc">Sort: Vessel Name (A-Z)</option>
+          <option value="name-desc">Sort: Vessel Name (Z-A)</option>
+          <option value="eta-asc">Sort: ETA (earliest first)</option>
+          <option value="eta-desc">Sort: ETA (latest first)</option>
+          <option value="etd-asc">Sort: ETD (earliest first)</option>
+          <option value="etd-desc">Sort: ETD (latest first)</option>
+        </select>
+      </div>
     </div>
 
     <div class="controls-row" style="margin-top: -6px;">
@@ -162,7 +163,7 @@
   <div id="addVesselOverlay">
     <div id="addVesselCard">
       <button id="addVesselCloseBtn" aria-label="Close">✕</button>
-      <h3>Add Vessel to US Calling List</h3>
+      <h3>Add Vessel to ENOA/D List</h3>
       <form id="addVesselForm">
         <label for="newVesselName">Vessel Name *</label>
         <input type="text" id="newVesselName" required />
@@ -512,9 +513,10 @@
         inputHtml = `<select>${options.map((o) => `<option value="${esc(o)}" ${o === currentValue ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
       } else if (field === 'arrivalPort') {
         inputHtml = `<input type="text" value="${esc(currentValue)}" list="portSuggestions" placeholder="Type or pick a port" />`;
+      } else if (isDateField) {
+        inputHtml = `<input type="date" value="${ddMmYyyyToIso(currentValue)}" />`;
       } else {
-        const placeholder = isDateField ? ' placeholder="DD-MM-YYYY" title="Enter as DD-MM-YYYY — day first"' : '';
-        inputHtml = `<input type="text" value="${esc(currentValue)}"${placeholder} />`;
+        inputHtml = `<input type="text" value="${esc(currentValue)}" />`;
       }
       td.innerHTML = inputHtml;
       const inputEl = td.querySelector('input, select');
@@ -524,14 +526,7 @@
       let saved = false;
       const save = async () => {
         if (saved) return;
-        const newValue = inputEl.value;
-
-        if (isDateField && newValue && !/^\d{2}[-.]\d{2}[-.]\d{4}$/.test(newValue)) {
-          if (!confirm(`"${newValue}" doesn't look like DD-MM-YYYY. Save it exactly as typed anyway?`)) {
-            inputEl.focus();
-            return;
-          }
-        }
+        const newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
         saved = true;
 
         if (newValue === currentValue) {
@@ -562,7 +557,7 @@
     }
 
     async function deleteEntries(ids) {
-      if (!confirm(`Delete ${ids.length} entry(ies) from the US Calling List? This only removes them from this working list — it does not touch VECS List.`)) return;
+      if (!confirm(`Delete ${ids.length} entry(ies) from the ENOA/D List? This only removes them from this working list — it does not touch VECS List.`)) return;
       for (const id of ids) {
         await fetch(`/api/us-calling-entries/${id}`, { method: 'DELETE', credentials: 'include' });
       }
@@ -595,6 +590,13 @@
       if (e.target.id === 'addVesselOverlay') document.getElementById('addVesselOverlay').classList.remove('show');
     });
 
+    function ddMmYyyyToIso(raw) {
+      if (!raw) return '';
+      const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
+      if (!match) return '';
+      const [, dd, mm, yyyy] = match;
+      return `${yyyy}-${mm}-${dd}`;
+    }
     function isoToDdMmYyyy(iso) {
       if (!iso) return undefined;
       const [yyyy, mm, dd] = iso.split('-');
@@ -731,6 +733,14 @@
       });
     });
     confirmOverlay.addEventListener('click', (e) => { if (e.target === confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+    document.getElementById('filtersToggleBtn').addEventListener('click', () => {
+      const section = document.getElementById('filtersSection');
+      const btn = document.getElementById('filtersToggleBtn');
+      const isOpen = section.style.display !== 'none';
+      section.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = (isOpen ? '▸' : '▾') + ' Filters & Sort';
+    });
 
     loadEntries();
     renderFilterChips();

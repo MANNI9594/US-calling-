@@ -31,6 +31,43 @@ const listQuerySchema = z.object({
   sortDir: z.enum(['asc', 'desc']).default('asc'),
 });
 
+/**
+ * Returns distinct existing values for a free-text field, so the frontend
+ * can offer them as type-ahead suggestions that grow naturally from real
+ * usage — e.g. once someone types "Port Arthur" as a Built Location or
+ * Port, it becomes a suggestion for everyone from then on, without needing
+ * a hardcoded list maintained by hand.
+ */
+const DISTINCT_VALUE_FIELDS = new Set(['arrivalPort', 'builtLocation', 'registeredOwnerPerCor', 'registeredOwnerPerCsr', 'operatorNameInCofr']);
+
+vesselsRouter.get('/distinct-values', asyncHandler(async (req, res) => {
+  const field = typeof req.query.field === 'string' ? req.query.field : '';
+  if (!DISTINCT_VALUE_FIELDS.has(field)) {
+    res.status(400).json({ error: `Unsupported field "${field}"` });
+    return;
+  }
+
+  let values: string[];
+  if (field === 'arrivalPort') {
+    const rows = await prisma.vesselCallingRecord.findMany({
+      where: { arrivalPort: { not: null } },
+      select: { arrivalPort: true },
+      distinct: ['arrivalPort'],
+    });
+    values = rows.map((r: { arrivalPort: string | null }) => r.arrivalPort as string);
+  } else {
+    const rows = await prisma.vessel.findMany({
+      where: { [field]: { not: null } },
+      select: { [field]: true },
+      distinct: [field as 'builtLocation'],
+    });
+    values = rows.map((r: Record<string, unknown>) => r[field] as string);
+  }
+
+  values = values.filter((v) => v && v.trim() !== '').sort((a, b) => a.localeCompare(b));
+  res.json({ values });
+}));
+
 vesselsRouter.get('/', asyncHandler(async (req, res) => {
   const parsed = listQuerySchema.safeParse(req.query);
   if (!parsed.success) {

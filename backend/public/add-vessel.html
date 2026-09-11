@@ -6,6 +6,12 @@
 <title>US Calling Master Manager — Add Vessel</title>
 <link rel="stylesheet" href="/styles.css" />
 <style>
+  .dropzone-mini {
+    border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 14px;
+    text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
+  }
+  .dropzone-mini.dragover { background: var(--blue-50); border-color: var(--blue-600); }
+  .dropzone-mini:focus { outline: 2px solid var(--blue-600); outline-offset: 2px; }
   .pending-op { background: var(--blue-50); color: #1e40af; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.85rem; margin-top: 14px; }
   .search-result { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 8px; }
   .search-result .info { font-size: 0.88rem; }
@@ -91,6 +97,15 @@
           <label for="builtLocation">Built Location</label>
           <input type="text" id="builtLocation" list="suggestions-builtLocation" />
 
+          <label for="arrivalPort">Arrival Port</label>
+          <input type="text" id="arrivalPort" list="suggestions-arrivalPort" />
+
+          <label for="etaDate">ETA</label>
+          <input type="date" id="etaDate" />
+
+          <label for="etdDate">ETD</label>
+          <input type="date" id="etdDate" />
+
           <label for="serviceFeesApplicable">Service Fees Applicable</label>
           <select id="serviceFeesApplicable">
             <option value="UNKNOWN">Unknown</option>
@@ -101,7 +116,11 @@
           <div id="serviceFeesSuggestion" style="font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 10px; border-radius: 6px; margin-top: 6px; display: none;"></div>
 
           <label for="evidencePhoto">Evidence Photo (optional)</label>
-          <input type="file" id="evidencePhoto" accept="image/png,image/jpeg,image/gif" />
+          <div class="dropzone-mini" id="evidenceDropzone" tabindex="0">
+            <strong>Drop an evidence photo here</strong>, click to choose one, or click here and paste (Ctrl+V) a copied image.
+            <span id="evidenceFileName" style="display:block; margin-top:4px; font-weight:600;"></span>
+            <input type="file" id="evidencePhoto" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" style="display:none;" />
+          </div>
         </fieldset>
 
         <div style="margin-top: 16px;">
@@ -130,7 +149,7 @@
     });
 
     // Type-ahead suggestions grown from real usage across the vessel database.
-    ['builtLocation', 'registeredOwnerPerCor', 'registeredOwnerPerCsr', 'operatorNameInCofr'].forEach(async (field) => {
+    ['builtLocation', 'registeredOwnerPerCor', 'registeredOwnerPerCsr', 'operatorNameInCofr', 'arrivalPort'].forEach(async (field) => {
       try {
         const res = await fetch(`/api/vessels/distinct-values?field=${field}`, { credentials: 'include' });
         const data = await res.json();
@@ -189,9 +208,24 @@
     if (pendingOp.etaRaw || pendingOp.etdRaw || pendingOp.arrivalPort) {
       const info = document.getElementById('pendingOpInfo');
       info.style.display = 'block';
-      info.innerHTML = `<strong>Pending update from this row will be applied once the vessel exists:</strong><br>
+      info.innerHTML = `<strong>Pre-filled from the pending row below — feel free to adjust before saving:</strong><br>
         Port: ${pendingOp.arrivalPort || '—'} | ETA: ${pendingOp.etaRaw || '—'} | ETD: ${pendingOp.etdRaw || '—'}`;
     }
+    if (pendingOp.arrivalPort) document.getElementById('arrivalPort').value = pendingOp.arrivalPort;
+    function ddMmYyyyToIso(raw) {
+      if (!raw) return '';
+      const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
+      if (!match) return '';
+      const [, dd, mm, yyyy] = match;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    function isoToDdMmYyyy(iso) {
+      if (!iso) return '';
+      const [yyyy, mm, dd] = iso.split('-');
+      return `${dd}-${mm}-${yyyy}`;
+    }
+    if (pendingOp.etaRaw) document.getElementById('etaDate').value = ddMmYyyyToIso(pendingOp.etaRaw);
+    if (pendingOp.etdRaw) document.getElementById('etdDate').value = ddMmYyyyToIso(pendingOp.etdRaw);
 
     async function runSearch() {
       const query = document.getElementById('searchInput').value.trim();
@@ -280,6 +314,40 @@
 
     if (pendingOp.vesselName) runSearch();
 
+    const evidenceDropzone = document.getElementById('evidenceDropzone');
+    const evidencePhotoInput = document.getElementById('evidencePhoto');
+    const evidenceFileName = document.getElementById('evidenceFileName');
+    function setEvidenceFile(file) {
+      if (!file) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      evidencePhotoInput.files = dt.files;
+      evidenceFileName.textContent = `Selected: ${file.name}`;
+    }
+    evidenceDropzone.addEventListener('click', () => evidencePhotoInput.click());
+    evidencePhotoInput.addEventListener('change', (e) => { if (e.target.files[0]) evidenceFileName.textContent = `Selected: ${e.target.files[0].name}`; });
+    evidenceDropzone.addEventListener('dragover', (e) => { e.preventDefault(); evidenceDropzone.classList.add('dragover'); });
+    evidenceDropzone.addEventListener('dragleave', () => evidenceDropzone.classList.remove('dragover'));
+    evidenceDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      evidenceDropzone.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) setEvidenceFile(e.dataTransfer.files[0]);
+    });
+    evidenceDropzone.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            setEvidenceFile(file);
+            e.preventDefault();
+          }
+          break;
+        }
+      }
+    });
+
     const form = document.getElementById('addForm');
     const resultBox = document.getElementById('result');
     const submitBtn = document.getElementById('submitBtn');
@@ -302,9 +370,9 @@
         bridgeLetter: document.getElementById('bridgeLetter').value || undefined,
         builtLocation: document.getElementById('builtLocation').value || undefined,
         serviceFeesApplicable: document.getElementById('serviceFeesApplicable').value,
-        arrivalPort: pendingOp.arrivalPort || undefined,
-        etaRaw: pendingOp.etaRaw || undefined,
-        etdRaw: pendingOp.etdRaw || undefined,
+        arrivalPort: document.getElementById('arrivalPort').value || undefined,
+        etaRaw: isoToDdMmYyyy(document.getElementById('etaDate').value) || undefined,
+        etdRaw: isoToDdMmYyyy(document.getElementById('etdDate').value) || undefined,
         voyageType: pendingOp.voyageType || undefined,
         transactionType: pendingOp.transactionType || undefined,
         sendTo: pendingOp.sendTo || undefined,
@@ -350,6 +418,7 @@
       }
     });
   </script>
+  <datalist id="suggestions-arrivalPort"></datalist>
   <datalist id="suggestions-builtLocation"></datalist>
   <datalist id="suggestions-registeredOwnerPerCor"></datalist>
   <datalist id="suggestions-registeredOwnerPerCsr"></datalist>

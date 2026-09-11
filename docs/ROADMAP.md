@@ -441,3 +441,18 @@ User clarified the intent was never "highlight when Applicable" specifically —
 Clarified after some back-and-forth: the actual complaint was purely about layout, not behavior — "+ Add Vessel" and "Edit Mode" sat in VECS List's top-right header area, while on ENOA/D List they sit in the same row as the search box. Moved both buttons out of `header-actions` and into `controls-row`, positioned immediately after the search input — now byte-for-byte the same button order and position as ENOA/D List (search → Add Vessel → Edit Mode → Select All → Clear Selection → Remove/Delete Selected → Undo → Redo → Filters toggle). "+ Add Vessel" remains a link to `add-vessel.html`, unchanged in behavior — this was a pure position fix, not a redesign of what clicking it does.
 
 Also corrected a Quick Links & Docs nav placement: per explicit "move, don't duplicate" instruction, it's now a genuine top-level nav item (VECS List | ENOA/D List | Quick Links & Docs | Settings) rather than a card inside Settings, removed from Settings to avoid the redundant duplicate entry point.
+
+## Add Vessel: drag-and-drop + paste for evidence photo, wider formats, manual ETA/ETD/Port
+
+**Evidence photo upload now supports three input methods, all feeding the same underlying file input** so the submit logic doesn't need to branch on how the file arrived:
+- Click to browse (as before)
+- Drag-and-drop onto the dropzone
+- **Copy an image, click the dropzone, paste (Ctrl+V)** — reads directly from the clipboard, extracts the image, and feeds it through the same path as the other two methods
+
+All three use the same `setEvidenceFile()` helper (via the `DataTransfer` API to populate the real `<input type="file">`), so there's exactly one file-handling code path regardless of method, tested by tracing the flow all the way through to the actual `POST /api/evidence/upload` call.
+
+**Wider file format support**: PNG (already supported — likely what "PNJ" meant), JPEG, GIF, WEBP, and PDF, both on the frontend `accept` attribute and the backend's actual validation filter (which now matches — previously the backend only accepted PNG/JPEG/GIF regardless of what the frontend offered).
+
+**ETA, ETD, and Port are now manually-editable fields on Add Vessel**, not only settable via the pending-operational-data URL flow from a ENOA/D List "New/Unknown" row. ETA/ETD use the same native date picker + DD-MM-YYYY conversion pattern already established elsewhere; Port gets the same dynamic, learned-from-real-usage suggestion list as the other free-text fields. When arriving via the pending-op flow, these fields are still pre-filled as before, but now remain fully editable rather than being locked to whatever the source row contained.
+
+**Not yet tested live** — next actions: (1) try all three evidence-upload methods (click, drag, paste) on a real vessel creation and confirm each attaches correctly, (2) manually set ETA/ETD/Port on a brand-new vessel with no pending-op context and confirm they save correctly, (3) confirm a PDF evidence upload works end-to-end.

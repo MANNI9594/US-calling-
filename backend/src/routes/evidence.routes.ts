@@ -19,9 +19,9 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: env.MAX_UPLOAD_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const ok = ['image/png', 'image/jpeg', 'image/gif'].includes(file.mimetype);
+    const ok = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'].includes(file.mimetype);
     if (!ok) {
-      cb(new AppError(400, 'Only PNG, JPEG, or GIF images are accepted'));
+      cb(new AppError(400, 'Only PNG, JPEG, GIF, WEBP images or PDF files are accepted'));
       return;
     }
     cb(null, true);

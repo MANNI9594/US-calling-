@@ -70,6 +70,7 @@
     text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
   }
   .dropzone-mini.dragover { background: var(--blue-50); border-color: var(--blue-600); }
+  .dropzone-mini:focus { outline: 2px solid var(--blue-600); outline-offset: 2px; }
   .btn-row { display: flex; gap: 10px; margin-top: 10px; }
   table.summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
   table.summary-table th, table.summary-table td { text-align: left; padding: 7px 4px; border-bottom: 1px solid var(--border); }
@@ -530,7 +531,7 @@
         const bestEvidence = (v.evidence || []).find((e) => e.reviewStatus === 'CONFIRMED') || (v.evidence || [])[0];
         const evidenceCell = bestEvidence
           ? `<img class="ev-thumb" src="/api/evidence/${bestEvidence.id}/image" data-full="/api/evidence/${bestEvidence.id}/image" loading="lazy" />`
-          : `<div class="ev-thumb-empty">No image</div>`;
+          : `<div class="ev-thumb-empty">—</div>`;
 
         return `
           <tr class="${past ? 'flagged' : ''}" data-vessel-id="${v.id}">
@@ -611,19 +612,6 @@
     document.getElementById('lightbox').addEventListener('click', () => {
       document.getElementById('lightbox').style.display = 'none';
     });
-
-    function ddMmYyyyToIso(raw) {
-      if (!raw) return '';
-      const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
-      if (!match) return ''; // unparseable existing value — picker just starts blank rather than showing garbage
-      const [, dd, mm, yyyy] = match;
-      return `${yyyy}-${mm}-${dd}`;
-    }
-    function isoToDdMmYyyy(iso) {
-      if (!iso) return '';
-      const [yyyy, mm, dd] = iso.split('-');
-      return `${dd}-${mm}-${yyyy}`;
-    }
 
     function startEdit(td) {
       if (td.classList.contains('editing')) return;
@@ -719,23 +707,72 @@
       const cr = (v.callingRecords || []).find((r) => r.isCurrent) || {};
       const evidenceList = v.evidence || [];
 
+      function opt(value, label) {
+        return `<option value="${value}" ${value === (v.serviceFeesApplicable || 'UNKNOWN') ? 'selected' : ''}>${label}</option>`;
+      }
+
       modalBody.innerHTML = `
-        <h3>${v.vesselName}</h3>
-        <dl>
-          <dt>IMO Number</dt><dd>${v.imoNumber ?? '—'}${v.imoNumberPlausible === false ? ' <span class="badge badge-amber">implausible</span>' : ''}</dd>
-          <dt>Flag</dt><dd>${v.flag ?? '—'}</dd>
-          <dt>Vessel Type</dt><dd>${v.vesselType ?? '—'}</dd>
-          <dt>Summer Deadweight/TEU</dt><dd style="${serviceFeesYellowStyle(v.serviceFeesApplicable)}">${v.summerDeadweightOrTeu ?? '—'}</dd>
-          <dt>Registered Owner (CoR)</dt><dd style="${chinaHighlightStyle(v.registeredOwnerPerCor)}">${v.registeredOwnerPerCor ?? '—'}</dd>
-          <dt>Registered Owner (CSR)</dt><dd style="${chinaHighlightStyle(v.registeredOwnerPerCsr)}">${v.registeredOwnerPerCsr ?? '—'}</dd>
-          <dt>Operator (COFR)</dt><dd>${v.operatorNameInCofr ?? '—'}</dd>
-          <dt>Bridge Letter</dt><dd>${v.bridgeLetter ?? '—'}</dd>
-          <dt>Built Location</dt><dd style="${chinaHighlightStyle(v.builtLocation)}">${v.builtLocation ?? '—'}</dd>
-          <dt>Service Fees</dt><dd style="${serviceFeesYellowStyle(v.serviceFeesApplicable)}">${v.serviceFeesApplicable ?? '—'}</dd>
-          <dt>Current Port / ETA / ETD</dt><dd>${cr.arrivalPort ?? '—'} / ${dateCell(cr.etaRaw, false)} / ${dateCell(cr.etdRaw, false)}</dd>
-          <dt>Voyage / Transaction / Send To</dt><dd>${cr.voyageType ?? '—'} / ${cr.transactionType ?? '—'} / ${cr.sendTo ?? '—'}</dd>
-          <dt>Open data quality issues</dt><dd>${(v.dataQualityIssues || []).map((i) => `${i.issueType}: ${i.message}`).join('<br>') || 'None'}</dd>
-        </dl>
+        <h3>Edit Vessel</h3>
+        <form id="editVesselForm">
+          <label for="evVesselName">Vessel Name *</label>
+          <input type="text" id="evVesselName" required value="${esc(v.vesselName)}" />
+
+          <label for="evImoNumber">IMO Number</label>
+          <input type="text" id="evImoNumber" value="${esc(v.imoNumber)}" />
+
+          <label for="evFlag">Flag</label>
+          <input type="text" id="evFlag" value="${esc(v.flag)}" />
+
+          <label for="evVesselType">Vessel Type</label>
+          <input type="text" id="evVesselType" value="${esc(v.vesselType)}" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
+
+          <label for="evSummerDeadweightOrTeu">Summer Deadweight / TEU</label>
+          <input type="text" id="evSummerDeadweightOrTeu" value="${esc(v.summerDeadweightOrTeu)}" />
+
+          <label for="evBallastOrLoaded">Ballast / Loaded</label>
+          <select id="evBallastOrLoaded">
+            <option value="" ${!cr.ballastOrLoaded ? 'selected' : ''}>—</option>
+            <option value="Ballast" ${cr.ballastOrLoaded === 'Ballast' ? 'selected' : ''}>Ballast</option>
+            <option value="Loaded" ${cr.ballastOrLoaded === 'Loaded' ? 'selected' : ''}>Loaded</option>
+          </select>
+
+          <label for="evRegisteredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
+          <input type="text" id="evRegisteredOwnerPerCor" list="suggestions-registeredOwnerPerCor" value="${esc(v.registeredOwnerPerCor)}" />
+
+          <label for="evRegisteredOwnerPerCsr">Registered Owner (per CSR)</label>
+          <input type="text" id="evRegisteredOwnerPerCsr" list="suggestions-registeredOwnerPerCsr" value="${esc(v.registeredOwnerPerCsr)}" />
+
+          <label for="evOperatorNameInCofr">Operator's Name in COFR</label>
+          <input type="text" id="evOperatorNameInCofr" list="suggestions-operatorNameInCofr" value="${esc(v.operatorNameInCofr)}" />
+
+          <label for="evBridgeLetter">Bridge Letter</label>
+          <input type="text" id="evBridgeLetter" value="${esc(v.bridgeLetter)}" />
+
+          <label for="evBuiltLocation">Built Location</label>
+          <input type="text" id="evBuiltLocation" list="suggestions-builtLocation" value="${esc(v.builtLocation)}" />
+
+          <label for="evArrivalPort">Arrival Port</label>
+          <input type="text" id="evArrivalPort" list="suggestions-arrivalPort" value="${esc(cr.arrivalPort)}" />
+
+          <label for="evEta">ETA</label>
+          <input type="date" id="evEta" value="${ddMmYyyyToIso(cr.etaRaw)}" />
+
+          <label for="evEtd">ETD</label>
+          <input type="date" id="evEtd" value="${ddMmYyyyToIso(cr.etdRaw)}" />
+
+          <label for="evServiceFeesApplicable">Service Fees Applicable</label>
+          <select id="evServiceFeesApplicable">
+            ${opt('UNKNOWN', 'Unknown')}${opt('YES', 'Yes')}${opt('NO', 'No')}${opt('NA', 'N/A')}
+          </select>
+          <div id="evServiceFeesSuggestion" style="font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 10px; border-radius: 6px; margin-top: 6px; display: none;"></div>
+
+          ${(v.dataQualityIssues || []).length > 0 ? `<div class="alert alert-error show" style="margin-top:10px;">${v.dataQualityIssues.map((i) => `${i.issueType}: ${i.message}`).join('<br>')}</div>` : ''}
+
+          <div class="btn-row">
+            <button type="submit" id="evSubmitBtn" class="btn btn-accent">Save Changes</button>
+          </div>
+          <div id="evSaveResult" class="alert"></div>
+        </form>
 
         <h3 style="margin-top:20px; font-size:1rem;">Evidence Photos</h3>
         <div id="modalEvidenceGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:10px; margin-top:10px;">
@@ -747,10 +784,10 @@
             </div>
           `).join('') || '<p style="color:var(--text-400); font-size:0.85rem;">No evidence photos yet.</p>'}
         </div>
-        <div style="margin-top:12px;">
-          <label for="modalEvidenceUpload" class="btn btn-primary" style="cursor:pointer; display:inline-block;">+ Upload Photo</label>
-          <input type="file" id="modalEvidenceUpload" accept="image/png,image/jpeg,image/gif" style="display:none;" />
-          <span id="modalUploadStatus" style="font-size:0.8rem; color:var(--text-600); margin-left:8px;"></span>
+        <div class="dropzone-mini" id="modalEvidenceDropzone" tabindex="0" style="margin-top:10px;">
+          <strong>Drop a photo here</strong>, click to choose one, or click here and paste (Ctrl+V) a copied image.
+          <span id="modalUploadStatus" style="display:block; margin-top:4px; font-size:0.8rem; color:var(--text-600);"></span>
+          <input type="file" id="modalEvidenceUpload" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" style="display:none;" />
         </div>
       `;
 
@@ -773,8 +810,9 @@
         });
       });
 
-      document.getElementById('modalEvidenceUpload').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
+      // Evidence upload: click, drag-and-drop, or paste — all three feed
+      // the same hidden file input, same pattern as Add Vessel.
+      async function uploadModalEvidence(file) {
         if (!file) return;
         const status = document.getElementById('modalUploadStatus');
         status.textContent = 'Uploading…';
@@ -790,6 +828,119 @@
           loadVessels(true);
         } catch {
           status.textContent = 'Could not reach the server.';
+        }
+      }
+      const modalDropzone = document.getElementById('modalEvidenceDropzone');
+      const modalFileInput = document.getElementById('modalEvidenceUpload');
+      modalDropzone.addEventListener('click', () => modalFileInput.click());
+      modalFileInput.addEventListener('change', (e) => uploadModalEvidence(e.target.files[0]));
+      modalDropzone.addEventListener('dragover', (e) => { e.preventDefault(); modalDropzone.classList.add('dragover'); });
+      modalDropzone.addEventListener('dragleave', () => modalDropzone.classList.remove('dragover'));
+      modalDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        modalDropzone.classList.remove('dragover');
+        uploadModalEvidence(e.dataTransfer.files[0]);
+      });
+      modalDropzone.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) { uploadModalEvidence(file); e.preventDefault(); }
+            break;
+          }
+        }
+      });
+
+      // Service Fees live suggestion — same endpoint/logic as Add Vessel.
+      let evSuggestTimer = null;
+      async function fetchEvServiceFeesSuggestion() {
+        const vesselType = document.getElementById('evVesselType').value;
+        const summerDeadweightOrTeu = document.getElementById('evSummerDeadweightOrTeu').value;
+        const ballastOrLoaded = document.getElementById('evBallastOrLoaded').value;
+        const note = document.getElementById('evServiceFeesSuggestion');
+        if (!vesselType && !summerDeadweightOrTeu && !ballastOrLoaded) { note.style.display = 'none'; return; }
+        try {
+          const res = await fetch('/api/vessels/suggest-service-fees', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ vesselType, summerDeadweightOrTeu, ballastOrLoaded }),
+          });
+          const result = await res.json();
+          if (!res.ok) return;
+          note.style.display = 'block';
+          note.textContent = `Suggested: ${result.reason}${result.voyageDistanceCaveatApplies ? ' Note: the voyage-distance exemption is NOT checked automatically — verify manually if it might apply.' : ''}`;
+        } catch {}
+      }
+      ['evVesselType', 'evSummerDeadweightOrTeu', 'evBallastOrLoaded'].forEach((id) => {
+        document.getElementById(id).addEventListener('input', () => { clearTimeout(evSuggestTimer); evSuggestTimer = setTimeout(fetchEvServiceFeesSuggestion, 400); });
+        document.getElementById(id).addEventListener('change', () => { clearTimeout(evSuggestTimer); evSuggestTimer = setTimeout(fetchEvServiceFeesSuggestion, 400); });
+      });
+
+      document.getElementById('editVesselForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const submitBtn = document.getElementById('evSubmitBtn');
+        const resultBox = document.getElementById('evSaveResult');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving…';
+        resultBox.className = 'alert';
+
+        try {
+          const profileRes = await fetch(`/api/vessels/${vesselId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              vesselName: document.getElementById('evVesselName').value,
+              imoNumber: document.getElementById('evImoNumber').value || undefined,
+              flag: document.getElementById('evFlag').value || undefined,
+              vesselType: document.getElementById('evVesselType').value || undefined,
+              summerDeadweightOrTeu: document.getElementById('evSummerDeadweightOrTeu').value || undefined,
+              registeredOwnerPerCor: document.getElementById('evRegisteredOwnerPerCor').value || undefined,
+              registeredOwnerPerCsr: document.getElementById('evRegisteredOwnerPerCsr').value || undefined,
+              operatorNameInCofr: document.getElementById('evOperatorNameInCofr').value || undefined,
+              bridgeLetter: document.getElementById('evBridgeLetter').value || undefined,
+              builtLocation: document.getElementById('evBuiltLocation').value || undefined,
+              serviceFeesApplicable: document.getElementById('evServiceFeesApplicable').value,
+            }),
+          });
+          const profileData = await profileRes.json();
+          if (!profileRes.ok) {
+            resultBox.className = 'alert alert-error show';
+            resultBox.textContent = profileData.error || 'Could not save profile changes.';
+            return;
+          }
+
+          const opRes = await fetch(`/api/vessels/${vesselId}/operational`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              arrivalPort: document.getElementById('evArrivalPort').value || undefined,
+              etaRaw: isoToDdMmYyyy(document.getElementById('evEta').value) || undefined,
+              etdRaw: isoToDdMmYyyy(document.getElementById('evEtd').value) || undefined,
+              ballastOrLoaded: document.getElementById('evBallastOrLoaded').value || undefined,
+            }),
+          });
+          const opData = await opRes.json();
+          if (!opRes.ok) {
+            resultBox.className = 'alert alert-error show';
+            resultBox.textContent = opData.error || 'Profile saved, but operational fields (Port/ETA/ETD) failed to save.';
+            return;
+          }
+
+          resultBox.className = 'alert alert-success show';
+          resultBox.textContent = 'Saved.';
+          loadVessels(true);
+          loadDynamicSuggestions();
+        } catch {
+          resultBox.className = 'alert alert-error show';
+          resultBox.textContent = 'Could not reach the server.';
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Save Changes';
         }
       });
     }

@@ -219,8 +219,19 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
   // in Excel, since Excel does not clip a positioned image to its anchor
   // column). Column L is index 11 (0-indexed) in MASTER_HEADERS.
   const evidenceColumnWidth = template.columnWidths[11];
-  const maxImageWidthPx = evidenceColumnWidth !== undefined ? columnWidthToPixels(evidenceColumnWidth) : undefined;
-  const maxImageHeightPx = template.dataRowHeight !== undefined ? rowHeightToPixels(template.dataRowHeight) : undefined;
+  const fullColumnWidthPx = evidenceColumnWidth !== undefined ? columnWidthToPixels(evidenceColumnWidth, 0) : undefined;
+  const fullRowHeightPx = template.dataRowHeight !== undefined ? rowHeightToPixels(template.dataRowHeight, 0) : undefined;
+
+  // Deliberately smaller than the full cell — a fixed 460×95px guess was
+  // tried first (overflowed into the next column) and a "just barely
+  // smaller" 8px-margin version was tried second (touched the column
+  // edges, looked cramped). This targets ~75% of the available space so
+  // the image sits clearly smaller than the column with visible breathing
+  // room, then is explicitly centered within the cell (see colOffsetFraction
+  // / rowOffsetFraction below) rather than just anchored at the top-left.
+  const SHRINK_FACTOR = 0.75;
+  const maxImageWidthPx = fullColumnWidthPx !== undefined ? fullColumnWidthPx * SHRINK_FACTOR : undefined;
+  const maxImageHeightPx = fullRowHeightPx !== undefined ? fullRowHeightPx * SHRINK_FACTOR : undefined;
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -239,7 +250,7 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
       r.vessel.registeredOwnerPerCsr,
       r.vessel.operatorNameInCofr,
       r.vessel.bridgeLetter,
-      null, // evidence image column — populated visually below, not as a cell value
+      r.evidenceStorageKey ? null : '—', // evidence image column — populated visually below when present; a plain dash when there's no image, matching every other empty cell in the sheet
       r.vessel.builtLocation,
       r.vessel.serviceFeesApplicable === 'UNKNOWN' ? null : r.vessel.serviceFeesApplicable,
       r.arrivalPort,
@@ -305,8 +316,17 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
         );
         const extension = (dims.type === 'jpg' ? 'jpeg' : dims.type) as 'png' | 'jpeg' | 'gif';
         const imageId = workbook.addImage({ buffer: imgBuffer as unknown as ExcelJS.Buffer, extension });
+
+        // Center the (now deliberately smaller) image within its cell,
+        // rather than anchoring it at the top-left corner — computed as a
+        // fraction of one column/row width, which ExcelJS supports
+        // directly and which survives a real write+read round-trip
+        // (verified before relying on this).
+        const colOffsetFraction = fullColumnWidthPx ? Math.max(0, (fullColumnWidthPx - placement.width) / 2 / fullColumnWidthPx) : 0;
+        const rowOffsetFraction = fullRowHeightPx ? Math.max(0, (fullRowHeightPx - placement.height) / 2 / fullRowHeightPx) : 0;
+
         sheet.addImage(imageId, {
-          tl: { col: 11, row: excelRowNumber - 1 },
+          tl: { col: 11 + colOffsetFraction, row: excelRowNumber - 1 + rowOffsetFraction },
           ext: { width: placement.width, height: placement.height },
         } as unknown as ExcelJS.ImageRange);
         imagesPlaced += 1;

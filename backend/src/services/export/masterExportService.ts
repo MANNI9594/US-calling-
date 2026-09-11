@@ -260,6 +260,18 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
     // substring, case-insensitive) appears in Built Location or either
     // Registered Owner column — applied identically here and in the
     // portal table, so the two can never disagree.
+    //
+    // BUG FIX: every cell above was assigned `cell.style = template.dataRowStyle`
+    // — the SAME object reference, not a copy, for every cell in the whole
+    // sheet. Setting `.fill` directly on one cell (`row.getCell(i).fill = ...`)
+    // does not create a new style for that cell — it mutates the shared
+    // style object in place, which silently turned the entire exported
+    // sheet yellow, not just the intended cell. Confirmed with a real
+    // ExcelJS round-trip reproduction before landing this fix. The correct
+    // fix is to build a brand-new style object (via spread) for any cell
+    // that needs a different fill than the shared default, leaving the
+    // shared object itself untouched for every other cell.
+    const yellowFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFF200' } };
     const chinaHighlightColumns: Array<{ colIdx: number; value: string | null }> = [
       { colIdx: 7, value: r.vessel.registeredOwnerPerCor }, // 0-indexed position of "Registered Owners...as per CoR" in MASTER_HEADERS
       { colIdx: 8, value: r.vessel.registeredOwnerPerCsr }, // "...as per CSR"
@@ -267,7 +279,7 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
     ];
     for (const { colIdx, value } of chinaHighlightColumns) {
       if (value && value.toLowerCase().includes('china')) {
-        row.getCell(colIdx + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
+        row.getCell(colIdx + 1).style = { ...template.dataRowStyle, fill: yellowFill };
       }
     }
 
@@ -277,8 +289,8 @@ export async function generateMasterExport(): Promise<MasterExportResult> {
     // since those haven't actually been evaluated yet. Same rule applied
     // identically in the portal table.
     if (r.vessel.serviceFeesApplicable === 'YES' || r.vessel.serviceFeesApplicable === 'NO') {
-      row.getCell(5 + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
-      row.getCell(13 + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF200' } };
+      row.getCell(5 + 1).style = { ...template.dataRowStyle, fill: yellowFill };
+      row.getCell(13 + 1).style = { ...template.dataRowStyle, fill: yellowFill };
     }
 
     if (r.evidenceStorageKey) {

@@ -456,3 +456,13 @@ All three use the same `setEvidenceFile()` helper (via the `DataTransfer` API to
 **ETA, ETD, and Port are now manually-editable fields on Add Vessel**, not only settable via the pending-operational-data URL flow from a ENOA/D List "New/Unknown" row. ETA/ETD use the same native date picker + DD-MM-YYYY conversion pattern already established elsewhere; Port gets the same dynamic, learned-from-real-usage suggestion list as the other free-text fields. When arriving via the pending-op flow, these fields are still pre-filled as before, but now remain fully editable rather than being locked to whatever the source row contained.
 
 **Not yet tested live** — next actions: (1) try all three evidence-upload methods (click, drag, paste) on a real vessel creation and confirm each attaches correctly, (2) manually set ETA/ETD/Port on a brand-new vessel with no pending-op context and confirm they save correctly, (3) confirm a PDF evidence upload works end-to-end.
+
+## CRITICAL BUG FIXED: Master export turned entirely yellow
+
+User reported downloading the Master export and finding the **entire sheet** highlighted yellow, not just the intended China/Service-Fees cells. Root cause confirmed via a real ExcelJS round-trip reproduction (not guessed): every data cell was assigned `cell.style = template.dataRowStyle` — the SAME style object by reference, not a copy, for every cell in the whole sheet (a deliberate choice for consistent formatting). The highlight code then did `row.getCell(i).fill = {...}` directly on individual cells — but ExcelJS's `.fill` setter mutates the cell's underlying style object in place rather than creating a new one. Since that style object was shared by reference across literally every cell in the sheet, highlighting one cell silently repainted all of them.
+
+**Fixed** by building a new, independent style object per highlighted cell instead of mutating the shared one: `cell.style = { ...template.dataRowStyle, fill: yellowFill }` (spread creates a fresh object) rather than `cell.fill = yellowFill` (mutates the shared object). Applied to both the China-highlight and Service-Fees-highlight code paths, the only two places in the codebase using this pattern.
+
+**Verified with two permanent regression tests** (`tests/exportYellowFillBug.test.ts`) — one that reproduces the exact bug mechanism to document why it happened, one that proves the fix produces exactly one highlighted cell with the base font/style intact. Both run as part of the normal test suite, so this specific failure mode can never silently return.
+
+This was found and fixed through actual execution, not code review — a real ExcelJS workbook was built, written, and read back to observe the true behavior before diagnosing or fixing anything.

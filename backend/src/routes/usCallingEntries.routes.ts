@@ -15,6 +15,7 @@ import {
   applyEntriesToVecs,
   previewApplyToVecs,
   exportEntriesToXlsx,
+  markEntryDeparted,
 } from '../services/uscalling/usCallingListEntryService';
 
 export const usCallingEntriesRouter = Router();
@@ -83,6 +84,23 @@ usCallingEntriesRouter.delete('/:id', asyncHandler(async (req, res) => {
   await deleteEntry(req.params.id);
   res.json({ ok: true });
   broadcast('us-calling-changed');
+}));
+
+/**
+ * "Departed" action — the fully manual replacement for auto-removal.
+ * Deletes the entry AND flags the matching VECS vessel (if any) with
+ * markedDepartedAt, so it shows a "Departed" badge there for the person
+ * to review and manually remove whenever they're ready.
+ */
+usCallingEntriesRouter.post('/:id/departed', asyncHandler(async (req, res) => {
+  try {
+    const result = await markEntryDeparted(req.params.id);
+    res.json(result);
+    broadcast('us-calling-changed');
+    broadcast('vessels-changed'); // VECS List's Departed badge depends on this too
+  } catch (err) {
+    throw new AppError(404, err instanceof Error ? err.message : 'Entry not found');
+  }
 }));
 
 usCallingEntriesRouter.post('/import', upload.single('file'), asyncHandler(async (req, res) => {

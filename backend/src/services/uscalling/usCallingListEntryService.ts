@@ -5,7 +5,6 @@ import { parseOperationalDate } from '../../utils/parseOperationalDate';
 import { readUsCallingList, type UsCallingListRow } from './usCallingListReader';
 import { runCommitTransaction, type CallingListCommitSummary } from './usCallingImportService';
 import { matchCallingListRow, type CallingListVesselCandidate } from './callingListMatching';
-import { isRemovalCandidate } from './removalCandidate';
 import { logAudit } from '../audit/auditService';
 
 export interface EntryInput {
@@ -153,11 +152,7 @@ export async function importEntriesFromFile(fileBuffer: Buffer): Promise<ImportE
  * shared with usCallingImportService.ts) — this is a different source of
  * rows, not different business logic.
  */
-export interface ApplyToVecsSummary extends CallingListCommitSummary {
-  vesselsRemoved: number;
-}
-
-export async function applyEntriesToVecs(restoreArchivedVessels: boolean): Promise<{ batchId: string; summary: ApplyToVecsSummary }> {
+export async function applyEntriesToVecs(restoreArchivedVessels: boolean): Promise<{ batchId: string; summary: CallingListCommitSummary }> {
   const entries = await prisma.usCallingListEntry.findMany();
 
   const rows: UsCallingListRow[] = entries.map((e: {
@@ -179,12 +174,6 @@ export async function applyEntriesToVecs(restoreArchivedVessels: boolean): Promi
     etdRaw: e.etdRaw,
   }));
 
-  // Computed BEFORE the update transaction — the set of "active vessels
-  // matched by no entry at all" is unaffected by updating vessels that ARE
-  // matched, so this ordering doesn't change the result, just keeps the
-  // removal logic simple and separately auditable from the update logic.
-  const { removalCandidates } = await computeRemovalCandidates(entries);
-
   const batch = await prisma.importBatch.create({
     data: {
       type: 'US_CALLING_LIST_UPLOAD',
@@ -195,40 +184,26 @@ export async function applyEntriesToVecs(restoreArchivedVessels: boolean): Promi
   });
 
   try {
+    // Update-only, by explicit design: this NEVER removes/archives a
+    // vessel on its own. Removal is a fully manual, human decision —
+    // mark a vessel "Departed" on ENOA/D List (see markVesselDeparted
+    // below), which flags it on VECS List; the person then decides
+    // whether and when to actually remove it themselves.
     const summary = await runCommitTransaction(rows, batch.id, restoreArchivedVessels);
-
-    // Archive departed vessels — the SAME archive mechanism as the manual
-    // "Remove Selected" button on VECS List: status flip only, vessel
-    // profile/evidence/history untouched and fully restorable. Never a
-    // delete, regardless of how a vessel came to be archived.
-    for (const candidate of removalCandidates) {
-      await prisma.vessel.update({
-        where: { id: candidate.vesselId },
-        data: { status: 'ARCHIVED', archivedAt: new Date() },
-      });
-      await logAudit({
-        eventType: 'VESSEL_REMOVED',
-        vesselId: candidate.vesselId,
-        importBatchId: batch.id,
-        summary: `${candidate.vesselName} auto-removed from VECS List: not present in the current US Calling List and its ETA (${candidate.etaRaw ?? 'unknown'}) is not in the future`,
-      });
-    }
-
-    const fullSummary: ApplyToVecsSummary = { ...summary, vesselsRemoved: removalCandidates.length };
 
     await prisma.importBatch.update({
       where: { id: batch.id },
-      data: { status: 'COMPLETED', completedAt: new Date(), summaryJson: fullSummary as unknown as Prisma.InputJsonValue },
+      data: { status: 'COMPLETED', completedAt: new Date(), summaryJson: summary as unknown as Prisma.InputJsonValue },
     });
 
     await logAudit({
       eventType: 'US_CALLING_LIST_UPLOADED',
       importBatchId: batch.id,
-      summary: `US Calling List applied from the live in-app list: ${summary.vesselsUpdated} updated, ${summary.vesselsRestored} restored, ${removalCandidates.length} removed (departed)`,
-      detail: fullSummary as unknown as Prisma.InputJsonValue,
+      summary: `US Calling List applied from the live in-app list: ${summary.vesselsUpdated} updated, ${summary.vesselsRestored} restored`,
+      detail: summary as unknown as Prisma.InputJsonValue,
     });
 
-    return { batchId: batch.id, summary: fullSummary };
+    return { batchId: batch.id, summary };
   } catch (err) {
     await prisma.importBatch.update({
       where: { id: batch.id },
@@ -268,24 +243,8 @@ export async function exportEntriesToXlsx(): Promise<UsCallingListExportResult> 
 
 /**
  * Computes what "Apply to VECS List" WOULD do, without changing anything —
- * the confirmation-popup data the user explicitly asked for before this
- * action runs, since it can both update AND remove vessels.
- *
- * Removal rule (deliberately conservative): a VECS vessel is only a
- * removal candidate if it is BOTH (a) not matched by name to any current
- * US Calling List entry, AND (b) its current ETA is today or already in
- * the past (or entirely unparseable). A vessel with a genuinely FUTURE ETA
- * is never touched, regardless of whether it's on the US Calling List —
- * the US Calling List is a near-term/current view and legitimately won't
- * contain vessels VECS is tracking for 10-20 days out yet. Being missing
- * from a near-term list is only meaningful evidence of departure once the
- * vessel's own ETA says it should already be here.
- *
- * IMPORTANT: removal here means the same thing it always means in this
- * app — archived, never deleted. The vessel's permanent profile, its
- * evidence images, and its full history remain completely intact and
- * restorable via the VECS List "Archived" tab. This function (and
- * applyEntriesToVecs below) never touches the delete path.
+ * update-only, per explicit design (see applyEntriesToVecs above). No
+ * removal/archiving is computed or previewed here anymore.
  */
 export interface ApplyToVecsPreview {
   counts: {
@@ -295,9 +254,7 @@ export interface ApplyToVecsPreview {
     newUnknown: number;
     archivedFound: number;
     ambiguous: number;
-    toBeRemoved: number;
   };
-  removalCandidates: Array<{ vesselId: string; vesselName: string; etaRaw: string | null; etdRaw: string | null }>;
 }
 
 interface VesselWithCurrentRecord {
@@ -305,19 +262,19 @@ interface VesselWithCurrentRecord {
   vesselName: string;
   vesselNameNormalized: string;
   status: 'ACTIVE' | 'ARCHIVED';
-  callingRecords: Array<{ etaRaw: string | null; etdRaw: string | null; etaParsed: Date | null; arrivalPort?: string | null }>;
+  callingRecords: Array<{ etaRaw: string | null; etdRaw: string | null; arrivalPort?: string | null }>;
 }
 
-async function computeRemovalCandidates(
-  entries: Array<{ vesselNameNormalized: string }>,
-): Promise<{ candidates: CallingListVesselCandidate[]; allVessels: VesselWithCurrentRecord[]; removalCandidates: ApplyToVecsPreview['removalCandidates']; matchedNormalizedNames: Set<string> }> {
+export async function previewApplyToVecs(): Promise<ApplyToVecsPreview> {
+  const entries = await prisma.usCallingListEntry.findMany();
+
   const allVessels = (await prisma.vessel.findMany({
     select: {
       id: true,
       vesselName: true,
       vesselNameNormalized: true,
       status: true,
-      callingRecords: { where: { isCurrent: true }, take: 1, select: { etaRaw: true, etdRaw: true, etaParsed: true, arrivalPort: true } },
+      callingRecords: { where: { isCurrent: true }, take: 1, select: { etaRaw: true, etdRaw: true, arrivalPort: true } },
     },
   })) as unknown as VesselWithCurrentRecord[];
 
@@ -328,29 +285,7 @@ async function computeRemovalCandidates(
     status: v.status,
   }));
 
-  const matchedNormalizedNames = new Set(entries.map((e) => e.vesselNameNormalized));
-
-  const now = Date.now();
-  const removalCandidates: ApplyToVecsPreview['removalCandidates'] = [];
-  for (const v of allVessels) {
-    const cr = v.callingRecords[0];
-    const etaParsedMs = cr?.etaParsed ? new Date(cr.etaParsed).getTime() : null;
-
-    if (!isRemovalCandidate({ status: v.status, vesselNameNormalized: v.vesselNameNormalized, etaParsedMs }, matchedNormalizedNames, now)) {
-      continue;
-    }
-
-    removalCandidates.push({ vesselId: v.id, vesselName: v.vesselName, etaRaw: cr?.etaRaw ?? null, etdRaw: cr?.etdRaw ?? null });
-  }
-
-  return { candidates, allVessels, removalCandidates, matchedNormalizedNames };
-}
-
-export async function previewApplyToVecs(): Promise<ApplyToVecsPreview> {
-  const entries = await prisma.usCallingListEntry.findMany();
-  const { candidates, allVessels, removalCandidates } = await computeRemovalCandidates(entries);
-
-  const counts = { totalEntries: entries.length, updated: 0, unchanged: 0, newUnknown: 0, archivedFound: 0, ambiguous: 0, toBeRemoved: removalCandidates.length };
+  const counts = { totalEntries: entries.length, updated: 0, unchanged: 0, newUnknown: 0, archivedFound: 0, ambiguous: 0 };
 
   for (const entry of entries) {
     const match = matchCallingListRow(entry.vesselName, candidates);
@@ -370,5 +305,40 @@ export async function previewApplyToVecs(): Promise<ApplyToVecsPreview> {
     }
   }
 
-  return { counts, removalCandidates };
+  return { counts };
+}
+
+/**
+ * Marks a vessel "Departed" — the fully manual replacement for the
+ * auto-removal feature this app used to have. Called when the user clicks
+ * "Departed" on an ENOA/D List row: deletes that entry from the working
+ * list AND, if a matching VECS vessel exists (by normalized name), flags
+ * it with `markedDepartedAt` so VECS List can show a "Departed" badge next
+ * to its name — a visual heads-up for the person to review and manually
+ * remove it themselves, never an automatic removal.
+ */
+export interface MarkDepartedResult {
+  entryDeleted: boolean;
+  vesselFlagged: { id: string; vesselName: string } | null;
+}
+
+export async function markEntryDeparted(entryId: string): Promise<MarkDepartedResult> {
+  const entry = await prisma.usCallingListEntry.findUnique({ where: { id: entryId } });
+  if (!entry) throw new Error('Entry not found');
+
+  const matchedVessel = await prisma.vessel.findFirst({
+    where: { vesselNameNormalized: entry.vesselNameNormalized, status: 'ACTIVE' },
+  });
+
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.usCallingListEntry.delete({ where: { id: entryId } });
+    if (matchedVessel) {
+      await tx.vessel.update({ where: { id: matchedVessel.id }, data: { markedDepartedAt: new Date() } });
+    }
+  });
+
+  return {
+    entryDeleted: true,
+    vesselFlagged: matchedVessel ? { id: matchedVessel.id, vesselName: matchedVessel.vesselName } : null,
+  };
 }

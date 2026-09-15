@@ -96,6 +96,15 @@ model Vessel {
   archivedAt           DateTime? @map("archived_at")
   restoredAt           DateTime? @map("restored_at")
 
+  // Set when the vessel is marked "Departed" from the ENOA/D List
+  // (a manual, human decision — this app never auto-removes a vessel from
+  // VECS List on its own). Shown as a badge next to the vessel name.
+  // Automatically cleared back to null the moment fresh operational data
+  // is applied to this vessel from ENOA/D List again — new data arriving
+  // means the vessel is active again, so a stale "Departed" flag would be
+  // actively misleading if left in place.
+  markedDepartedAt DateTime? @map("marked_departed_at")
+
   callingRecords VesselCallingRecord[]
   evidence       VesselEvidence[]
   dataQualityIssues DataQualityIssue[]

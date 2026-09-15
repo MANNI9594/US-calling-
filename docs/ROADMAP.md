@@ -486,3 +486,17 @@ This was found and fixed through actual execution, not code review — a real Ex
 ## ENOA/D List: Send To = "Review" now shows red
 
 Small, direct addition: the Send To cell turns red (same styling as an overdue ETD) whenever its value is "Review" rather than "NVMC" — a quick visual flag for entries needing attention.
+
+## Removal workflow rebuilt: auto-removal retired, "Departed" is now fully manual
+
+Significant behavioral change per explicit user request, confirmed in detail before building:
+
+**Auto-removal on Apply to VECS List is fully retired.** The earlier feature (archiving a VECS vessel automatically when it's missing from ENOA/D List and its ETA isn't in the future) is removed entirely — `computeRemovalCandidates`, `isRemovalCandidate`, and their dedicated test suite (`removalCandidate.test.ts`) are deleted, not just disabled. Apply to VECS List is now genuinely update-only: it pushes ETA/ETD/etc. changes through for matched vessels and never removes or archives anything on its own.
+
+**"Departed" replaces "Delete" on ENOA/D List** (both the per-row button and the bulk action) — same underlying effect (removes the entry from the working list) but reframed around what it actually means, and now does one more thing: if a matching vessel exists on VECS List, it gets flagged.
+
+**New `markedDepartedAt` field on `Vessel`**, set when marked Departed from ENOA/D List. VECS List shows a red "Departed" badge next to the vessel name, in the same position as the "Past ETD" badge (both can show together if both are true). This is a manual, human-set signal — the point of this whole change is that the system no longer decides on its own when a vessel should be removed from VECS List; it just flags it clearly so a person can make that call and act on it themselves via the existing "Remove Selected" action.
+
+**Auto-clears on fresh data**, per explicit confirmation: if a vessel marked Departed later receives fresh operational data via Apply to VECS List again (meaning it's actually back), `markedDepartedAt` is automatically cleared back to null inside the shared `runCommitTransaction` update path — used by both Apply to VECS List and any future file-based US Calling List upload, so this can't happen through one path but not the other.
+
+**Not yet tested live** — next actions: (1) mark a vessel Departed on ENOA/D List and confirm it disappears from that list and shows the red badge on VECS List, (2) confirm Apply to VECS List no longer removes anything, only updates, (3) confirm applying fresh data for a Departed-flagged vessel clears the badge automatically.

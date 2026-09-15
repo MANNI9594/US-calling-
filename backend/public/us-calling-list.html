@@ -112,7 +112,7 @@
       <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
       <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
       <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
-      <button id="deleteSelectedBtn" class="btn btn-danger" disabled>Delete Selected</button>
+      <button id="deleteSelectedBtn" class="btn btn-danger" disabled>Mark Departed</button>
       <button id="undoBtn" class="btn btn-secondary" disabled title="Undo your last edit (this session only)">↶ Undo</button>
       <button id="redoBtn" class="btn btn-secondary" disabled title="Redo (this session only)">↷ Redo</button>
       <span class="selection-count" id="selectionCount"></span>
@@ -453,7 +453,7 @@
             ${editableTd(e.id, 'arrivalPort', e.arrivalPort, e.arrivalPort ?? '—')}
             ${editableTd(e.id, 'etaRaw', e.etaRaw, dateCell(e.etaRaw, false))}
             ${editableTd(e.id, 'etdRaw', e.etdRaw, dateCell(e.etdRaw, isReminder))}
-            <td><button class="btn btn-secondary delete-row-btn" data-id="${e.id}" style="font-size:0.75rem; padding:4px 8px;">Delete</button></td>
+            <td><button class="btn btn-secondary delete-row-btn" data-id="${e.id}" data-name="${esc(e.vesselName)}" style="font-size:0.75rem; padding:4px 8px;">Departed</button></td>
           </tr>
         `;
       }).join('');
@@ -483,7 +483,7 @@
         });
       });
       table.querySelectorAll('.delete-row-btn').forEach((btn) => {
-        btn.addEventListener('click', () => deleteEntries([btn.dataset.id]));
+        btn.addEventListener('click', () => markDeparted([{ id: btn.dataset.id, name: btn.dataset.name }]));
       });
       if (editMode) {
         table.querySelectorAll('td.editable').forEach((td) => {
@@ -561,17 +561,24 @@
       });
     }
 
-    async function deleteEntries(ids) {
-      if (!confirm(`Delete ${ids.length} entry(ies) from the ENOA/D List? This only removes them from this working list — it does not touch VECS List.`)) return;
-      for (const id of ids) {
-        await fetch(`/api/us-calling-entries/${id}`, { method: 'DELETE', credentials: 'include' });
+    async function markDeparted(items) {
+      const names = items.map((i) => i.name).filter(Boolean).join(', ');
+      if (!confirm(`Mark ${items.length} vessel(s) as Departed?\n${names}\n\nThis removes them from the ENOA/D List. If any exist on VECS List, they'll show a "Departed" badge there — you can then remove them from VECS List yourself whenever you're ready.`)) return;
+      for (const item of items) {
+        await fetch(`/api/us-calling-entries/${item.id}/departed`, { method: 'POST', credentials: 'include' });
       }
       selected.clear();
       updateDeleteButton();
       loadEntries(true);
     }
 
-    document.getElementById('deleteSelectedBtn').addEventListener('click', () => deleteEntries(Array.from(selected)));
+    document.getElementById('deleteSelectedBtn').addEventListener('click', () => {
+      const items = Array.from(selected).map((id) => {
+        const entry = entries.find((e) => e.id === id);
+        return { id, name: entry ? entry.vesselName : '' };
+      });
+      markDeparted(items);
+    });
     document.getElementById('selectAllBtn').addEventListener('click', () => {
       displayEntries.forEach((e) => selected.add(e.id));
       renderTable();
@@ -692,12 +699,12 @@
           <tr><th>New / unknown vessel (not applied)</th><td>${p.counts.newUnknown}</td></tr>
           <tr><th>Archived vessel found (candidate to restore)</th><td>${p.counts.archivedFound}</td></tr>
           <tr><th>Ambiguous match (not applied)</th><td>${p.counts.ambiguous}</td></tr>
-          <tr><th style="color:var(--red-600);">Will be REMOVED from VECS (departed)</th><td style="color:var(--red-600); font-weight:700;">${p.counts.toBeRemoved}</td></tr>
         </table>
-        ${p.removalCandidates.length > 0 ? `
-          <p style="margin-top:10px; font-weight:600;">Vessels being removed (archived, not deleted — fully restorable with all data and evidence intact):</p>
-          <ul class="removal-list">${p.removalCandidates.map((v) => `<li>${v.vesselName} (ETD was: ${v.etdRaw ?? 'unknown'})</li>`).join('')}</ul>
-        ` : '<p style="margin-top:10px; color:var(--text-600);">No vessels will be removed.</p>'}
+        <p style="margin-top:10px; font-size:0.85rem; color:var(--text-600);">
+          This only updates ETA/ETD and other operational data for matching vessels — it never removes anything from
+          VECS List. To remove a vessel, mark it "Departed" here on ENOA/D List first (it'll show a Departed badge
+          on VECS List), then remove it yourself from there whenever you're ready.
+        </p>
         <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:0.88rem;">
           <input type="checkbox" id="restoreArchivedCheckbox" /> Also restore any archived vessels found above
         </label>
@@ -731,7 +738,7 @@
           }
           const s = applyData.summary;
           message.className = 'alert alert-success show';
-          message.textContent = `Applied: ${s.vesselsUpdated} updated, ${s.vesselsRestored} restored, ${s.vesselsRemoved} removed from VECS, ${s.newUnknownSkipped} new/unknown skipped.`;
+          message.textContent = `Applied: ${s.vesselsUpdated} updated, ${s.vesselsRestored} restored, ${s.newUnknownSkipped} new/unknown skipped.`;
         } catch {
           confirmOverlay.classList.remove('show');
         }

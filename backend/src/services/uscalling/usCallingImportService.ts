@@ -330,6 +330,12 @@ export async function runCommitTransaction(
           data: { status: 'RESOLVED', resolvedAt: new Date() },
         });
 
+        // Fresh operational data arriving for this vessel means it's
+        // active again — clear any "Departed" flag it may have been
+        // carrying (set manually via ENOA/D List's "Departed" action),
+        // per explicit user requirement. Harmless no-op if it was already null.
+        await tx.vessel.update({ where: { id: vesselId }, data: { markedDepartedAt: null } });
+
         const { parsed: etaParsed } = await checkAndRecordDate(tx, {
           raw: row.etaRaw,
           fieldName: 'eta',

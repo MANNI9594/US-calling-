@@ -482,3 +482,7 @@ This was found and fixed through actual execution, not code review — a real Ex
 **Add Vessel form redesigned** per user feedback that the old single-column narrow layout (620px) made it hard to type long owner/operator names into cramped fields. Widened the page to 900px and restructured the Permanent Profile fieldset as a CSS grid: short fields (IMO, Flag, Vessel Type, DWT/TEU, Ballast/Loaded, Bridge Letter, ETA, ETD) sit paired up two-per-row, while long free-text fields that actually need room — Registered Owner (CoR), Registered Owner (CSR), Operator's Name in COFR, Built Location, Arrival Port — each span the full new width for comfortable typing/reading of long shipyard and owner names.
 
 **Apply-to-VECS confirmation now shows ETD, not ETA**, for vessels flagged for removal — since removal is fundamentally about whether a vessel has *departed*, ETD is the relevant date to show, not its original arrival. `removalCandidates` now carries both `etaRaw` and `etdRaw` from the backend; only the removal-decision logic itself (still ETA-based per the original conservative rule, unchanged) and the *display* differ — the decision of *whether* to remove a vessel was never about ETD and still isn't.
+
+## ENOA/D List: Send To = "Review" now shows red
+
+Small, direct addition: the Send To cell turns red (same styling as an overdue ETD) whenever its value is "Review" rather than "NVMC" — a quick visual flag for entries needing attention.

@@ -11,6 +11,7 @@
   .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
   .date-warning { color: var(--amber-600); font-weight: 700; }
   .date-past-due { color: var(--red-600); font-weight: 700; }
+  .send-to-review { color: var(--red-600); font-weight: 700; }
   #editModeBtn.on { background: var(--green-600); }
   #editModeBtn.on:hover { background: #15803d; }
   .edit-hint { font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 12px; border-radius: var(--radius-sm); display: none; }
@@ -448,7 +449,7 @@
             ${editableTd(e.id, 'vesselName', e.vesselName, `<strong>${e.vesselName}</strong>${isReminder ? ' <span class="badge badge-red">Reminder</span>' : ''}`)}
             ${editableTd(e.id, 'voyageType', e.voyageType, e.voyageType ?? '—')}
             ${editableTd(e.id, 'transactionType', e.transactionType, e.transactionType ?? '—')}
-            ${editableTd(e.id, 'sendTo', e.sendTo, e.sendTo ?? '—')}
+            ${editableTd(e.id, 'sendTo', e.sendTo, e.sendTo === 'Review' ? `<span class="send-to-review">${e.sendTo}</span>` : (e.sendTo ?? '—'))}
             ${editableTd(e.id, 'arrivalPort', e.arrivalPort, e.arrivalPort ?? '—')}
             ${editableTd(e.id, 'etaRaw', e.etaRaw, dateCell(e.etaRaw, false))}
             ${editableTd(e.id, 'etdRaw', e.etdRaw, dateCell(e.etdRaw, isReminder))}

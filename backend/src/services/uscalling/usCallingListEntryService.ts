@@ -297,7 +297,7 @@ export interface ApplyToVecsPreview {
     ambiguous: number;
     toBeRemoved: number;
   };
-  removalCandidates: Array<{ vesselId: string; vesselName: string; etaRaw: string | null }>;
+  removalCandidates: Array<{ vesselId: string; vesselName: string; etaRaw: string | null; etdRaw: string | null }>;
 }
 
 interface VesselWithCurrentRecord {
@@ -340,7 +340,7 @@ async function computeRemovalCandidates(
       continue;
     }
 
-    removalCandidates.push({ vesselId: v.id, vesselName: v.vesselName, etaRaw: cr?.etaRaw ?? null });
+    removalCandidates.push({ vesselId: v.id, vesselName: v.vesselName, etaRaw: cr?.etaRaw ?? null, etdRaw: cr?.etdRaw ?? null });
   }
 
   return { candidates, allVessels, removalCandidates, matchedNormalizedNames };

@@ -695,7 +695,7 @@
         </table>
         ${p.removalCandidates.length > 0 ? `
           <p style="margin-top:10px; font-weight:600;">Vessels being removed (archived, not deleted — fully restorable with all data and evidence intact):</p>
-          <ul class="removal-list">${p.removalCandidates.map((v) => `<li>${v.vesselName} (ETA was: ${v.etaRaw ?? 'unknown'})</li>`).join('')}</ul>
+          <ul class="removal-list">${p.removalCandidates.map((v) => `<li>${v.vesselName} (ETD was: ${v.etdRaw ?? 'unknown'})</li>`).join('')}</ul>
         ` : '<p style="margin-top:10px; color:var(--text-600);">No vessels will be removed.</p>'}
         <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:0.88rem;">
           <input type="checkbox" id="restoreArchivedCheckbox" /> Also restore any archived vessels found above

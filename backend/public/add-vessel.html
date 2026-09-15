@@ -17,6 +17,16 @@
   .search-result .info { font-size: 0.88rem; }
   .search-result .info .name { font-weight: 700; }
   #manualFormSection { display: none; }
+
+  /* --- Redesigned form grid: short fields paired up, long free-text
+     fields (Owner/Operator/Built Location/Port) span the full width so
+     there's actually room to type a long name comfortably. --- */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+  .form-grid .field-full { grid-column: 1 / -1; }
+  .form-grid label { margin-top: 10px; }
+  .form-grid input[type="text"], .form-grid input[type="date"], .form-grid select {
+    width: 100%;
+  }
 </style>
 </head>
 <body>
@@ -28,7 +38,7 @@
     <a href="/settings.html">Settings</a>
   </nav>
 
-  <div class="page narrow">
+  <div class="page medium">
     <div class="page-header">
       <div>
         <h1>Add Vessel</h1>
@@ -58,68 +68,96 @@
 
       <form id="addForm">
         <label for="vesselName">Vessel Name *</label>
-        <input type="text" id="vesselName" required />
+        <input type="text" id="vesselName" required style="width:100%;" />
 
         <fieldset>
           <legend>Permanent Profile</legend>
 
-          <label for="imoNumber">IMO Number</label>
-          <input type="text" id="imoNumber" />
+          <div class="form-grid">
+            <div>
+              <label for="imoNumber">IMO Number</label>
+              <input type="text" id="imoNumber" />
+            </div>
+            <div>
+              <label for="flag">Flag</label>
+              <input type="text" id="flag" />
+            </div>
 
-          <label for="flag">Flag</label>
-          <input type="text" id="flag" />
+            <div>
+              <label for="vesselType">Vessel Type</label>
+              <input type="text" id="vesselType" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
+            </div>
+            <div>
+              <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
+              <input type="text" id="summerDeadweightOrTeu" />
+            </div>
 
-          <label for="vesselType">Vessel Type</label>
-          <input type="text" id="vesselType" placeholder="Bulk / Container / Tanker / LNG / Car Carrier" />
+            <div>
+              <label for="ballastOrLoaded">Ballast / Loaded</label>
+              <select id="ballastOrLoaded">
+                <option value="">—</option>
+                <option value="Ballast">Ballast</option>
+                <option value="Loaded">Loaded</option>
+              </select>
+            </div>
+            <div>
+              <label for="bridgeLetter">Bridge Letter</label>
+              <input type="text" id="bridgeLetter" />
+            </div>
 
-          <label for="summerDeadweightOrTeu">Summer Deadweight / TEU</label>
-          <input type="text" id="summerDeadweightOrTeu" />
+            <div class="field-full">
+              <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
+              <input type="text" id="registeredOwnerPerCor" list="suggestions-registeredOwnerPerCor" />
+            </div>
 
-          <label for="ballastOrLoaded">Ballast / Loaded</label>
-          <select id="ballastOrLoaded">
-            <option value="">—</option>
-            <option value="Ballast">Ballast</option>
-            <option value="Loaded">Loaded</option>
-          </select>
+            <div class="field-full">
+              <label for="registeredOwnerPerCsr">Registered Owner (per CSR)</label>
+              <input type="text" id="registeredOwnerPerCsr" list="suggestions-registeredOwnerPerCsr" />
+            </div>
 
-          <label for="registeredOwnerPerCor">Registered Owner (per Certificate of Registry)</label>
-          <input type="text" id="registeredOwnerPerCor" list="suggestions-registeredOwnerPerCor" />
+            <div class="field-full">
+              <label for="operatorNameInCofr">Operator's Name in COFR</label>
+              <input type="text" id="operatorNameInCofr" list="suggestions-operatorNameInCofr" />
+            </div>
 
-          <label for="registeredOwnerPerCsr">Registered Owner (per CSR)</label>
-          <input type="text" id="registeredOwnerPerCsr" list="suggestions-registeredOwnerPerCsr" />
+            <div class="field-full">
+              <label for="builtLocation">Built Location</label>
+              <input type="text" id="builtLocation" list="suggestions-builtLocation" />
+            </div>
 
-          <label for="operatorNameInCofr">Operator's Name in COFR</label>
-          <input type="text" id="operatorNameInCofr" list="suggestions-operatorNameInCofr" />
+            <div class="field-full">
+              <label for="arrivalPort">Arrival Port</label>
+              <input type="text" id="arrivalPort" list="suggestions-arrivalPort" />
+            </div>
 
-          <label for="bridgeLetter">Bridge Letter</label>
-          <input type="text" id="bridgeLetter" />
+            <div>
+              <label for="etaDate">ETA</label>
+              <input type="date" id="etaDate" />
+            </div>
+            <div>
+              <label for="etdDate">ETD</label>
+              <input type="date" id="etdDate" />
+            </div>
 
-          <label for="builtLocation">Built Location</label>
-          <input type="text" id="builtLocation" list="suggestions-builtLocation" />
+            <div class="field-full">
+              <label for="serviceFeesApplicable">Service Fees Applicable</label>
+              <select id="serviceFeesApplicable" style="width: auto; min-width: 200px;">
+                <option value="UNKNOWN">Unknown</option>
+                <option value="YES">Yes</option>
+                <option value="NO">No</option>
+                <option value="NA">N/A</option>
+              </select>
+              <div id="serviceFeesSuggestion" style="font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 10px; border-radius: 6px; margin-top: 6px; display: none;"></div>
+            </div>
 
-          <label for="arrivalPort">Arrival Port</label>
-          <input type="text" id="arrivalPort" list="suggestions-arrivalPort" />
-
-          <label for="etaDate">ETA</label>
-          <input type="date" id="etaDate" />
-
-          <label for="etdDate">ETD</label>
-          <input type="date" id="etdDate" />
-
-          <label for="serviceFeesApplicable">Service Fees Applicable</label>
-          <select id="serviceFeesApplicable">
-            <option value="UNKNOWN">Unknown</option>
-            <option value="YES">Yes</option>
-            <option value="NO">No</option>
-            <option value="NA">N/A</option>
-          </select>
-          <div id="serviceFeesSuggestion" style="font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 10px; border-radius: 6px; margin-top: 6px; display: none;"></div>
-
-          <label for="evidencePhoto">Evidence Photo (optional)</label>
-          <div class="dropzone-mini" id="evidenceDropzone" tabindex="0">
-            <strong>Drop an evidence photo here</strong>, click to choose one, or click here and paste (Ctrl+V) a copied image.
-            <span id="evidenceFileName" style="display:block; margin-top:4px; font-weight:600;"></span>
-            <input type="file" id="evidencePhoto" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" style="display:none;" />
+            <div class="field-full">
+              <label for="evidencePhoto">Evidence Photo (optional)</label>
+              <div class="dropzone-mini" id="evidenceDropzone" tabindex="0">
+                <strong>Drop an evidence photo here</strong>, click to choose one, or click here and paste (Ctrl+V) a copied image.
+                <span id="evidenceFileName" style="display:block; margin-top:4px; font-weight:600;"></span>
+                <input type="file" id="evidencePhoto" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" style="display:none;" />
+              </div>
+            </div>
           </div>
         </fieldset>
 

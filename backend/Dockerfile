@@ -44,4 +44,14 @@ EXPOSE 4000
 # required — appropriate for a personal single-user tool with no CLI access
 # on the deploying machine; see docs/DEPLOYMENT.md "No-CLI deployment path"),
 # then starts the server. Safe to run on every boot.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+#
+# --accept-data-loss is included permanently, not just for one deploy: since
+# there's no CLI access to manually approve a schema change case-by-case,
+# `prisma db push` would otherwise hard-block the *entire app* from starting
+# the moment any future schema change removes or narrows a column — even a
+# brand-new, empty one. This doesn't remove the need for care when changing
+# the schema (a real, populated column should still never be dropped without
+# thinking it through first) — it just means that care has to happen when
+# editing schema.prisma, not at deploy time, since deploy time has no human
+# in the loop to ask.
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/index.js"]

@@ -131,7 +131,7 @@
         <select id="sortSelect">
           <option value="name-asc">Sort: Vessel Name (A-Z)</option>
           <option value="name-desc">Sort: Vessel Name (Z-A)</option>
-          <option value="eta-asc">Sort: ETA (earliest first)</option>
+          <option value="eta-asc" selected>Sort: ETA (earliest first)</option>
           <option value="eta-desc">Sort: ETA (latest first)</option>
           <option value="etd-asc">Sort: ETD (earliest first)</option>
           <option value="etd-desc">Sort: ETD (latest first)</option>
@@ -270,7 +270,7 @@
     let selected = new Set();
     let searchTimer = null;
     let activeFilter = 'ALL';
-    let sortKey = 'name-asc';
+    let sortKey = 'eta-asc';
     let editMode = false;
 
     fetch('/api/auth/me', { credentials: 'include' }).then((res) => {

@@ -1,22 +1,7 @@
 import ExcelJS from 'exceljs';
 import { formatAsMasterDate } from '../../utils/parseOperationalDate';
-
-/**
- * Normalizes header text so a lookup key we write in code (using a plain
- * ASCII straight apostrophe, e.g. "Operator's Name in COFR") reliably
- * matches whatever the real Excel file actually contains — which may use a
- * typographic/curly apostrophe (') instead, as the real reference workbook
- * does. Confirmed as a real bug: this exact mismatch silently caused the
- * Operator field to import as blank for every single vessel, because the
- * lookup key never matched. Also collapses any run of whitespace, in case
- * a header has irregular spacing.
- */
-function normalizeHeaderText(text: string): string {
-  return text
-    .replace(/[\u2018\u2019\u0060]/g, "'") // curly single quotes + backtick -> straight apostrophe
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+import { normalizeHeaderText } from './normalizeHeaderText';
+import { extractCellText } from './extractCellText';
 
 /**
  * READ-ONLY inspection of a Master workbook. This is deliberately scoped to
@@ -74,7 +59,7 @@ export async function readMasterWorkbook(fileBuffer: Buffer): Promise<MasterWork
   const headerRow = sheet.getRow(1);
   const headers: string[] = [];
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    headers[colNumber - 1] = normalizeHeaderText(String(cell.value ?? '').trim());
+    headers[colNumber - 1] = normalizeHeaderText(extractCellText(cell.value));
   });
 
   if (headers.length === 0) {
@@ -106,7 +91,7 @@ export async function readMasterWorkbook(fileBuffer: Buffer): Promise<MasterWork
       } else if (typeof raw === 'number' || typeof raw === 'string') {
         value = raw;
       } else {
-        value = String(raw);
+        value = extractCellText(raw);
       }
       if (value !== null && value !== '') hasAnyValue = true;
       values[header] = value;

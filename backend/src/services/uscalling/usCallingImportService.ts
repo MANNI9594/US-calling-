@@ -6,6 +6,7 @@ import { matchCallingListRow, type CallingListVesselCandidate } from './callingL
 import { parseOperationalDate } from '../../utils/parseOperationalDate';
 import { checkAndRecordDate, checkEtdBeforeEta, checkPastEtd } from '../dataQuality/dataQualityService';
 import { logAudit } from '../audit/auditService';
+import { clearVesselDeparted } from '../departed/departedVesselService';
 
 export interface CallingListPreviewRow {
   rowNumber: number;
@@ -331,10 +332,10 @@ export async function runCommitTransaction(
         });
 
         // Fresh operational data arriving for this vessel means it's
-        // active again — clear any "Departed" flag it may have been
-        // carrying (set manually via ENOA/D List's "Departed" action),
-        // per explicit user requirement. Harmless no-op if it was already null.
-        await tx.vessel.update({ where: { id: vesselId }, data: { markedDepartedAt: null } });
+        // active again — clear any shared "Departed" marker it may have
+        // been carrying (set via any of the three lists' "Departed"
+        // action), per explicit user requirement. Harmless no-op if none existed.
+        await clearVesselDeparted(row.vesselName);
 
         const { parsed: etaParsed } = await checkAndRecordDate(tx, {
           raw: row.etaRaw,

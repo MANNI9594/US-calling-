@@ -10,6 +10,7 @@ import { checkAndRecordDate, checkEtdBeforeEta, checkPastEtd, checkImoPlausibili
 import { computeServiceFeesExemption } from '../services/vessel/serviceFeesExemption';
 import { logAudit } from '../services/audit/auditService';
 import { broadcast } from '../services/realtime/eventBus';
+import { markVesselDeparted, clearVesselDeparted, getDepartedNormalizedNames } from '../services/departed/departedVesselService';
 
 export const vesselsRouter = Router();
 vesselsRouter.use(requireAuth);
@@ -95,18 +96,18 @@ vesselsRouter.get('/', asyncHandler(async (req, res) => {
     },
   });
 
-  // Sorting by ETA happens in application code because it depends on the
-  // *parsed* date of the current calling record, which sits one relation
-  // away — not something a single Prisma orderBy can express cleanly here.
-  const sorted = [...vessels].sort((a, b) => {
-    if (parsed.data.sortBy === 'vesselName') {
-      const cmp = a.vesselName.localeCompare(b.vesselName);
-      return parsed.data.sortDir === 'asc' ? cmp : -cmp;
-    }
-    const aEta = a.callingRecords[0]?.etaParsed?.getTime() ?? Number.POSITIVE_INFINITY;
-    const bEta = b.callingRecords[0]?.etaParsed?.getTime() ?? Number.POSITIVE_INFINITY;
-    return parsed.data.sortDir === 'asc' ? aEta - bEta : bEta - aEta;
-  });
+  const departedNames = await getDepartedNormalizedNames();
+  const sorted = [...vessels]
+    .sort((a, b) => {
+      if (parsed.data.sortBy === 'vesselName') {
+        const cmp = a.vesselName.localeCompare(b.vesselName);
+        return parsed.data.sortDir === 'asc' ? cmp : -cmp;
+      }
+      const aEta = a.callingRecords[0]?.etaParsed?.getTime() ?? Number.POSITIVE_INFINITY;
+      const bEta = b.callingRecords[0]?.etaParsed?.getTime() ?? Number.POSITIVE_INFINITY;
+      return parsed.data.sortDir === 'asc' ? aEta - bEta : bEta - aEta;
+    })
+    .map((v) => ({ ...v, isDeparted: departedNames.has(v.vesselNameNormalized) }));
 
   res.json({ vessels: sorted, count: sorted.length });
 }));
@@ -127,7 +128,8 @@ vesselsRouter.get('/:id', asyncHandler(async (req, res) => {
     return;
   }
 
-  res.json({ vessel });
+  const departedNames = await getDepartedNormalizedNames();
+  res.json({ vessel: { ...vessel, isDeparted: departedNames.has(vessel.vesselNameNormalized) } });
 }));
 
 const createVesselSchema = z.object({
@@ -328,15 +330,29 @@ vesselsRouter.post('/archive', asyncHandler(async (req, res) => {
         eventType: 'VESSEL_REMOVED',
         vesselId,
         actorUserId: req.userId,
-        summary: `${vessel.vesselName} removed from Active Master (archived, not deleted)`,
+        summary: `${vessel.vesselName} marked Departed (archived, not deleted — fully restorable)`,
       });
       archived += 1;
     }
     return { archived, skipped };
   });
 
+  // Outside the transaction — this is the same shared, name-keyed marker
+  // ENOA/D List and US Calling both use, so "Departed" means the same
+  // thing and shows the same badge regardless of which list it was
+  // clicked from. Re-fetch names since the transaction above only
+  // returned counts, not which vessels were actually archived.
+  for (const vesselId of parsed.data.vesselIds) {
+    const vessel = await prisma.vessel.findUnique({ where: { id: vesselId } });
+    if (vessel && vessel.status === 'ARCHIVED') {
+      await markVesselDeparted(vessel.vesselName);
+    }
+  }
+
   res.json(result);
   broadcast('vessels-changed');
+  broadcast('us-calling-changed');
+  broadcast('us-calling-tracker-changed');
 }));
 
 /**
@@ -351,6 +367,8 @@ vesselsRouter.post('/restore', asyncHandler(async (req, res) => {
     res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
     return;
   }
+
+  const restoredVesselNames: string[] = [];
 
   const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     let restored = 0;
@@ -368,13 +386,23 @@ vesselsRouter.post('/restore', asyncHandler(async (req, res) => {
         actorUserId: req.userId,
         summary: `${vessel.vesselName} restored to Active Master`,
       });
+      restoredVesselNames.push(vessel.vesselName);
       restored += 1;
     }
     return { restored, skipped };
   });
 
+  // A restored vessel is active again — clear any shared "Departed"
+  // marker it may have carried, same principle as fresh operational data
+  // clearing it elsewhere: restoring IS the vessel becoming active again.
+  for (const name of restoredVesselNames) {
+    await clearVesselDeparted(name);
+  }
+
   res.json(result);
   broadcast('vessels-changed');
+  broadcast('us-calling-changed');
+  broadcast('us-calling-tracker-changed');
 }));
 
 const restoreAndUpdateSchema = z.object({
@@ -475,8 +503,12 @@ vesselsRouter.post('/:id/restore-and-update', asyncHandler(async (req, res) => {
     summary: `${vessel.vesselName} restored to Active Master${hasOperationalData ? ' with fresh operational data' : ''}`,
   });
 
+  await clearVesselDeparted(vessel.vesselName); // restoring means active again — same principle as everywhere else this marker is cleared
+
   res.json({ vessel: { ...vessel, status: 'ACTIVE' }, dataQualityIssuesRaised });
   broadcast('vessels-changed');
+  broadcast('us-calling-changed');
+  broadcast('us-calling-tracker-changed');
 }));
 
 /**

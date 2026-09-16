@@ -557,7 +557,7 @@
       const chinaBuilt = vessels.filter((v) => isChina(v.builtLocation)).length;
       const feesYes = vessels.filter((v) => v.serviceFeesApplicable === 'YES').length;
       const feesNo = vessels.filter((v) => v.serviceFeesApplicable === 'NO').length;
-      const bridgeLetterYes = vessels.filter((v) => v.bridgeLetter && v.bridgeLetter.trim() !== '').length;
+      const bridgeLetterYes = vessels.filter((v) => v.bridgeLetter && v.bridgeLetter.trim().toLowerCase() === 'yes').length;
 
       const kpis = [
         { label: 'Chinese-Built Vessels', value: chinaBuilt },

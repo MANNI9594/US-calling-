@@ -73,9 +73,10 @@
 <body>
   <nav class="topbar">
     <span class="brand">US Calling <span>Master</span></span>
+    <a href="/us-calling-tracker.html">US Calling</a>
     <a href="/active-master.html">VECS List</a>
     <a href="/us-calling-list.html" class="active">ENOA/D List</a>
-    <a href="/links-docs.html">Quick Links &amp; Docs</a>
+    <a href="/links-docs.html" class="nav-push-right">Quick Links &amp; Docs</a>
     <a href="/settings.html">Settings</a>
   </nav>
 
@@ -89,7 +90,7 @@
         </p>
       </div>
       <div class="header-actions">
-        <a href="/api/us-calling-entries/export" class="btn btn-secondary">⬇ Download List</a>
+        <a href="/api/us-calling-entries/export" id="downloadBtn" class="btn btn-secondary">⬇ Download List</a>
         <button id="applyBtn" class="btn btn-accent">✓ Apply to VECS List</button>
       </div>
     </div>
@@ -270,7 +271,19 @@
       const entry = undoStack.pop();
       if (!entry) return;
       try {
-        await applyFieldChange(entry.id, entry.field, entry.oldValue);
+        if (entry.type === 'departed') {
+          const res = await fetch('/api/us-calling-entries/undo-departed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(entry.snapshot),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not undo.');
+          entry.recreatedId = data.entry.id; // Redo needs the NEW id, not the original (which no longer exists)
+        } else {
+          await applyFieldChange(entry.id, entry.field, entry.oldValue);
+        }
         redoStack.push(entry);
         if (redoStack.length > MAX_HISTORY) redoStack.shift();
         await loadEntries(true);
@@ -285,7 +298,13 @@
       const entry = redoStack.pop();
       if (!entry) return;
       try {
-        await applyFieldChange(entry.id, entry.field, entry.newValue);
+        if (entry.type === 'departed') {
+          const res = await fetch(`/api/us-calling-entries/${entry.recreatedId}/departed`, { method: 'POST', credentials: 'include' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not redo.');
+        } else {
+          await applyFieldChange(entry.id, entry.field, entry.newValue);
+        }
         undoStack.push(entry);
         if (undoStack.length > MAX_HISTORY) undoStack.shift();
         await loadEntries(true);
@@ -542,7 +561,7 @@
 
         try {
           await applyFieldChange(id, field, newValue);
-          undoStack.push({ id, field, oldValue: currentValue, newValue });
+          undoStack.push({ type: 'field', id, field, oldValue: currentValue, newValue });
           if (undoStack.length > MAX_HISTORY) undoStack.shift();
           redoStack = []; // a fresh edit invalidates any pending redo path
           updateUndoRedoButtons();
@@ -563,10 +582,17 @@
 
     async function markDeparted(items) {
       const names = items.map((i) => i.name).filter(Boolean).join(', ');
-      if (!confirm(`Mark ${items.length} vessel(s) as Departed?\n${names}\n\nThis removes them from the ENOA/D List. If any exist on VECS List, they'll show a "Departed" badge there — you can then remove them from VECS List yourself whenever you're ready.`)) return;
+      if (!confirm(`Mark ${items.length} vessel(s) as Departed?\n${names}\n\nThis removes them from the ENOA/D List. If any exist on VECS List or US Calling, they'll show a "Departed" badge there too.`)) return;
       for (const item of items) {
-        await fetch(`/api/us-calling-entries/${item.id}/departed`, { method: 'POST', credentials: 'include' });
+        const res = await fetch(`/api/us-calling-entries/${item.id}/departed`, { method: 'POST', credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          undoStack.push({ type: 'departed', snapshot: data.snapshot });
+        }
       }
+      if (undoStack.length > MAX_HISTORY) undoStack = undoStack.slice(-MAX_HISTORY);
+      redoStack = [];
+      updateUndoRedoButtons();
       selected.clear();
       updateDeleteButton();
       loadEntries(true);
@@ -752,6 +778,21 @@
       const isOpen = section.style.display !== 'none';
       section.style.display = isOpen ? 'none' : 'block';
       btn.textContent = (isOpen ? '▸' : '▾') + ' Import / Refresh from Excel';
+    });
+
+    document.getElementById('downloadBtn').addEventListener('click', (e) => {
+      const hasActiveFilter =
+        activeFilter !== 'ALL' ||
+        document.getElementById('searchInput').value.trim() !== '' ||
+        document.getElementById('etaFromFilter').value !== '' ||
+        document.getElementById('etaToFilter').value !== '' ||
+        document.getElementById('etdFromFilter').value !== '' ||
+        document.getElementById('etdToFilter').value !== '';
+      if (hasActiveFilter) {
+        e.preventDefault();
+        const ids = displayEntries.map((entry) => entry.id).join(',');
+        window.location.href = `/api/us-calling-entries/export?ids=${encodeURIComponent(ids)}`;
+      }
     });
 
     document.getElementById('filtersToggleBtn').addEventListener('click', () => {

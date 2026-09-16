@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>US Calling Master Manager — US Calling</title>
+<link rel="stylesheet" href="/styles.css" />
+<script src="/date-format.js"></script>
+<style>
+  .controls-row { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+  .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
+  .date-warning { color: var(--amber-600); font-weight: 700; }
+  .date-past-due { color: var(--red-600); font-weight: 700; }
+  .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .not-in-vecs { background: #fff200; }
+
+  #editModeBtn.on { background: var(--green-600); }
+  #editModeBtn.on:hover { background: #15803d; }
+  .edit-hint { font-size: 0.78rem; color: var(--blue-700); background: var(--blue-50); padding: 6px 12px; border-radius: var(--radius-sm); display: none; }
+  .edit-hint.show { display: inline-block; }
+
+  .scroll-box { max-height: 68vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 14px; box-shadow: var(--shadow-sm); }
+  .scroll-box table.data-table { white-space: normal; }
+  .scroll-box table.data-table thead th {
+    top: 0; white-space: normal; word-break: break-word; vertical-align: bottom; min-width: 110px; max-width: 180px;
+  }
+  .scroll-box table.data-table td { white-space: normal; word-break: break-word; max-width: 200px; }
+  .scroll-box table.data-table td.editable { min-width: 90px; }
+
+  td.editable { cursor: pointer; }
+  td.editable:hover { background: var(--blue-50); outline: 1px dashed var(--blue-100); }
+  td.editing input, td.editing select { width: 100%; font-size: 0.85rem; padding: 4px 6px; border: 1px solid var(--blue-600); border-radius: 4px; }
+
+  .dropzone-mini {
+    border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 16px;
+    text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
+  }
+  .dropzone-mini.dragover { background: var(--blue-50); border-color: var(--blue-600); }
+  .dropzone-mini:focus { outline: 2px solid var(--blue-600); outline-offset: 2px; }
+  .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+
+  .dropdown-wrap { position: relative; }
+  .dropdown-panel {
+    display: none; position: absolute; top: 110%; left: 0; z-index: 50;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-md); padding: 10px 14px; min-width: 240px; max-height: 340px; overflow-y: auto;
+  }
+  .dropdown-panel.show { display: block; }
+  .dropdown-panel label { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 0.85rem; margin: 6px 0; color: var(--text-900); cursor: pointer; }
+  .dropdown-panel .panel-actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .dropdown-panel .panel-actions button { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+  .form-grid .field-full { grid-column: 1 / -1; }
+  .form-grid label { margin-top: 10px; font-size: 0.85rem; font-weight: 600; }
+  .form-grid input[type="text"], .form-grid input[type="date"], .form-grid select { width: 100%; }
+
+  #addVesselOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,41,0.55);
+    z-index: 300; align-items: center; justify-content: center; padding: 24px;
+  }
+  #addVesselOverlay.show { display: flex; }
+  #addVesselCard {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-md);
+    max-width: 900px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 24px 26px; position: relative;
+  }
+  #addVesselCard h3 { margin-top: 0; }
+  #addVesselCloseBtn {
+    position: absolute; top: 16px; right: 16px; background: none; border: none;
+    font-size: 1.3rem; cursor: pointer; color: var(--text-600); line-height: 1; padding: 4px 8px;
+  }
+</style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="brand">US Calling <span>Master</span></span>
+    <a href="/us-calling-tracker.html" class="active">US Calling</a>
+    <a href="/active-master.html">VECS List</a>
+    <a href="/us-calling-list.html">ENOA/D List</a>
+    <a href="/links-docs.html" class="nav-push-right">Quick Links &amp; Docs</a>
+    <a href="/settings.html">Settings</a>
+  </nav>
+
+  <div class="page full">
+    <div class="page-header">
+      <div>
+        <h1>US Calling</h1>
+        <p class="hint">The earliest stage: add a vessel here as soon as it's known to be calling a US port, before its ENOA is received.</p>
+      </div>
+      <div class="header-actions">
+        <a href="/api/us-calling-tracker/export" id="downloadBtn" class="btn btn-secondary">⬇ Download List</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <button id="importToggleBtn" class="btn btn-secondary" style="width: 100%; text-align: left; justify-content: flex-start;">▸ Import / Refresh from Excel</button>
+      <div id="importSection" style="display: none; margin-top: 14px;">
+        <div class="dropzone-mini" id="dropzone">
+          <strong>Import / refresh from Excel</strong> — drop a .xlsx here, or click to choose one.
+          Existing vessels are updated by name match; nothing is duplicated.
+          <input type="file" id="fileInput" accept=".xlsx" style="display:none;" />
+        </div>
+        <div id="importStatus" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-600);"></div>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <input type="text" id="searchInput" placeholder="Search vessel name..." style="width: 220px;" />
+      <button id="addVesselBtn" class="btn btn-primary">+ Add Vessel</button>
+      <button id="editModeBtn" class="btn btn-secondary">✎ Edit Mode: Off</button>
+      <button id="selectAllBtn" class="btn btn-secondary">Select All</button>
+      <button id="clearSelectionBtn" class="btn btn-secondary">Clear Selection</button>
+      <button id="departSelectedBtn" class="btn btn-danger" disabled>Departed</button>
+      <button id="undoBtn" class="btn btn-secondary" disabled title="Undo your last edit (this session only)">↶ Undo</button>
+      <button id="redoBtn" class="btn btn-secondary" disabled title="Redo (this session only)">↷ Redo</button>
+      <span class="selection-count" id="selectionCount"></span>
+      <div class="dropdown-wrap" style="margin-left: auto;">
+        <button id="columnsBtn" class="btn btn-secondary">☰ Columns</button>
+        <div id="columnsPanel" class="dropdown-panel"></div>
+      </div>
+      <button id="filtersToggleBtn" class="btn btn-secondary">▸ Filters &amp; Sort</button>
+    </div>
+
+    <div id="filtersSection" style="display: none;">
+      <div class="chip-row" id="filterChips"></div>
+      <div class="controls-row" style="margin-top: 10px;">
+        <select id="sortSelect">
+          <option value="name-asc">Sort: Vessel Name (A-Z)</option>
+          <option value="name-desc">Sort: Vessel Name (Z-A)</option>
+          <option value="eta-asc">Sort: ETA (earliest first)</option>
+          <option value="eta-desc">Sort: ETA (latest first)</option>
+          <option value="etd-asc">Sort: ETD (earliest first)</option>
+          <option value="etd-desc">Sort: ETD (latest first)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="controls-row" style="margin-top: -6px;">
+      <span class="edit-hint" id="editHint">Double-click any cell (except Vessel Name) to edit it. Press Enter or click away to save.</span>
+      <span id="liveSyncStatus" style="font-size: 0.78rem; color: var(--text-400); margin-left: auto;">○ Connecting…</span>
+    </div>
+
+    <div id="message" class="alert"></div>
+
+    <div class="scroll-box">
+      <table class="data-table" id="trackerTable"></table>
+    </div>
+  </div>
+
+  <datalist id="suggestions-arrivalPort"></datalist>
+  <datalist id="suggestions-flag"></datalist>
+  <datalist id="dateOrStatusOptions">
+    <option value="NA">
+    <option value="-">
+    <option value="Not Eligible">
+  </datalist>
+
+  <div id="addVesselOverlay">
+    <div id="addVesselCard">
+      <button id="addVesselCloseBtn" aria-label="Close">✕</button>
+      <h3>Add Vessel to US Calling</h3>
+      <form id="addForm">
+        <label for="avVesselName">Vessel Name *</label>
+        <input type="text" id="avVesselName" required style="width:100%;" />
+
+        <div class="form-grid">
+          <div>
+            <label for="avTech">Tech</label>
+            <input type="text" id="avTech" placeholder="e.g. HK Tech D11" />
+          </div>
+          <div>
+            <label for="avFlag">Flag</label>
+            <input type="text" id="avFlag" list="suggestions-flag" />
+          </div>
+
+          <div>
+            <label for="avEta">ETA</label>
+            <input type="date" id="avEta" />
+          </div>
+          <div>
+            <label for="avEtd">ETD</label>
+            <input type="date" id="avEtd" />
+          </div>
+
+          <div class="field-full">
+            <label for="avArrivalPort">Port</label>
+            <input type="text" id="avArrivalPort" list="suggestions-arrivalPort" />
+          </div>
+
+          <div>
+            <label for="avCertificateStatus">Certificate Status</label>
+            <input type="text" id="avCertificateStatus" />
+          </div>
+          <div>
+            <label for="avEnoaSentForReview">E-NOA sent for review</label>
+            <select id="avEnoaSentForReview">
+              <option value="">—</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="avQualship21ExpiryRaw">Qualship 21 Expiry Date</label>
+            <input type="text" id="avQualship21ExpiryRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+          <div>
+            <label for="avUsCallingMessageSentRaw">US Calling Message Sent</label>
+            <input type="text" id="avUsCallingMessageSentRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+
+          <div>
+            <label for="avReceivedFromVesselRaw">Received from vessel</label>
+            <input type="text" id="avReceivedFromVesselRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+          <div>
+            <label for="avReviewedRaw">Reviewed or not</label>
+            <input type="text" id="avReviewedRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+
+          <div>
+            <label for="avBallastWaterNbicRaw">Ballast Water Report (NBIC)</label>
+            <input type="text" id="avBallastWaterNbicRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+          <div>
+            <label for="avBallastWaterCaWaOrRaw">Ballast Water Report (CA/WA/OR)</label>
+            <input type="text" id="avBallastWaterCaWaOrRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+
+          <div>
+            <label for="avBiofoulingPlanRaw">Bio-fouling Management Plan</label>
+            <input type="text" id="avBiofoulingPlanRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+          <div>
+            <label for="avMarineInvasiveSpeciesRaw">Marine Invasive Species Form</label>
+            <input type="text" id="avMarineInvasiveSpeciesRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+
+          <div>
+            <label for="avChecklistSentRaw">HK/Marshall/Panama/Liberia/Singapore Checklist</label>
+            <input type="text" id="avChecklistSentRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+          <div>
+            <label for="avPscChecklistRaw">PSC Checklist</label>
+            <input type="text" id="avPscChecklistRaw" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />
+          </div>
+
+          <div class="field-full">
+            <label for="avRemark">Remark</label>
+            <input type="text" id="avRemark" />
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="submit" class="btn btn-accent">Create Entry</button>
+          <button type="button" class="btn btn-secondary" id="addVesselCancelBtn">Cancel</button>
+        </div>
+        <div id="avResult" class="alert"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let entries = [];
+    let displayEntries = [];
+    let selected = new Set();
+    let searchTimer = null;
+    let activeFilter = 'ALL';
+    let sortKey = 'name-asc';
+    let editMode = false;
+
+    fetch('/api/auth/me', { credentials: 'include' }).then((res) => {
+      if (!res.ok) window.location.href = '/login.html';
+    });
+
+    function esc(v) {
+      return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
+    }
+    function ddMmYyyyToIso(raw) {
+      if (!raw) return '';
+      const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
+      if (!match) return '';
+      const [, dd, mm, yyyy] = match;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    function isoToDdMmYyyy(iso) {
+      if (!iso) return '';
+      const [yyyy, mm, dd] = iso.split('-');
+      return `${dd}-${mm}-${yyyy}`;
+    }
+    function getTime(raw) {
+      if (!raw) return null;
+      const { text, warning } = formatDateForDisplay(raw);
+      if (warning) return null;
+      const [dd, mm, yyyy] = text.split('-').map(Number);
+      return new Date(Date.UTC(yyyy, mm - 1, dd)).getTime();
+    }
+    function dateCell(raw) {
+      if (!raw) return '—';
+      const { text, warning } = formatDateForDisplay(raw);
+      return warning ? `<span class="date-warning">${esc(raw)}</span>` : text;
+    }
+
+    const COLUMNS = [
+      { key: 'vesselName', label: 'Vessel Name', kind: 'text-locked' },
+      { key: 'tech', label: 'Tech', kind: 'text' },
+      { key: 'etaRaw', label: 'ETA', kind: 'date' },
+      { key: 'etdRaw', label: 'ETD', kind: 'date' },
+      { key: 'arrivalPort', label: 'Port', kind: 'suggest-port' },
+      { key: 'certificateStatus', label: 'Certificate Status', kind: 'text' },
+      { key: 'qualship21ExpiryRaw', label: 'Qualship 21 Expiry Date', kind: 'date-or-status' },
+      { key: 'enoaSentForReview', label: 'E-NOA sent for review', kind: 'dropdown-yn' },
+      { key: 'usCallingMessageSentRaw', label: 'US Calling Message Sent', kind: 'date-or-status' },
+      { key: 'receivedFromVesselRaw', label: 'Received from vessel', kind: 'date-or-status' },
+      { key: 'reviewedRaw', label: 'Reviewed or not', kind: 'date-or-status' },
+      { key: 'ballastWaterNbicRaw', label: 'Ballast Water Report (NBIC)', kind: 'date-or-status' },
+      { key: 'ballastWaterCaWaOrRaw', label: 'Ballast Water Report (CA/WA/OR)', kind: 'date-or-status' },
+      { key: 'biofoulingPlanRaw', label: 'Bio-fouling Management Plan', kind: 'date-or-status' },
+      { key: 'marineInvasiveSpeciesRaw', label: 'Marine Invasive Species Form', kind: 'date-or-status' },
+      { key: 'flag', label: 'Flag', kind: 'suggest-flag' },
+      { key: 'checklistSentRaw', label: 'HK/Marshall/Panama/Liberia/Singapore Checklist', kind: 'date-or-status' },
+      { key: 'pscChecklistRaw', label: 'PSC Checklist', kind: 'date-or-status' },
+      { key: 'remark', label: 'Remark', kind: 'text' },
+    ];
+
+    let hiddenColumns = new Set();
+    try { hiddenColumns = new Set(JSON.parse(localStorage.getItem('usCallingTrackerHiddenColumns') || '[]')); } catch { hiddenColumns = new Set(); }
+    function saveHiddenColumns() {
+      try { localStorage.setItem('usCallingTrackerHiddenColumns', JSON.stringify(Array.from(hiddenColumns))); } catch {}
+    }
+    function applyColumnVisibility() {
+      COLUMNS.forEach(({ key }) => {
+        if (key === 'vesselName') return;
+        const hidden = hiddenColumns.has(key);
+        document.querySelectorAll(`[data-colkey="${key}"]`).forEach((el) => { el.style.display = hidden ? 'none' : ''; });
+      });
+    }
+    function renderColumnsPanel() {
+      const panel = document.getElementById('columnsPanel');
+      panel.innerHTML = COLUMNS.filter((c) => c.key !== 'vesselName').map(({ key, label }) => `
+        <label><input type="checkbox" data-colkey-toggle="${key}" ${hiddenColumns.has(key) ? '' : 'checked'} /> ${label}</label>
+      `).join('') + `
+        <div class="panel-actions">
+          <button class="btn btn-secondary" id="showAllColsBtn" type="button">Show All</button>
+          <button class="btn btn-secondary" id="essentialColsBtn" type="button">Essentials Only</button>
+        </div>
+      `;
+      panel.querySelectorAll('[data-colkey-toggle]').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          const key = cb.dataset.colkeyToggle;
+          if (cb.checked) hiddenColumns.delete(key); else hiddenColumns.add(key);
+          saveHiddenColumns();
+          applyColumnVisibility();
+        });
+      });
+      document.getElementById('showAllColsBtn').addEventListener('click', () => {
+        hiddenColumns = new Set();
+        saveHiddenColumns(); applyColumnVisibility(); renderColumnsPanel();
+      });
+      document.getElementById('essentialColsBtn').addEventListener('click', () => {
+        const essentials = new Set(['vesselName', 'tech', 'etaRaw', 'etdRaw', 'arrivalPort', 'flag']);
+        hiddenColumns = new Set(COLUMNS.map((c) => c.key).filter((k) => !essentials.has(k)));
+        saveHiddenColumns(); applyColumnVisibility(); renderColumnsPanel();
+      });
+    }
+    document.getElementById('columnsBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('columnsPanel').classList.toggle('show');
+    });
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('columnsPanel');
+      if (!panel.contains(e.target) && e.target.id !== 'columnsBtn') panel.classList.remove('show');
+    });
+
+    const FILTERS = [
+      { key: 'ALL', label: 'All', dot: 'blue' },
+      { key: 'NOT_IN_VECS', label: 'Not in VECS List', dot: 'amber' },
+      { key: 'DEPARTED', label: 'Departed', dot: 'red' },
+    ];
+    function renderFilterChips() {
+      const div = document.getElementById('filterChips');
+      div.innerHTML = FILTERS.map((f) => `
+        <div class="chip ${activeFilter === f.key ? 'active' : ''}" data-key="${f.key}"><span class="dot ${f.dot}"></span>${f.label}</div>
+      `).join('');
+      div.querySelectorAll('.chip').forEach((el) => {
+        el.addEventListener('click', () => { activeFilter = el.dataset.key; renderFilterChips(); applyFilterAndSort(); });
+      });
+    }
+
+    const MAX_HISTORY = 50;
+    let undoStack = [];
+    let redoStack = [];
+    function updateUndoRedoButtons() {
+      document.getElementById('undoBtn').disabled = undoStack.length === 0;
+      document.getElementById('redoBtn').disabled = redoStack.length === 0;
+    }
+    async function applyFieldChange(id, field, value) {
+      const res = await fetch(`/api/us-calling-tracker/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ field, value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not save change.');
+    }
+    document.getElementById('undoBtn').addEventListener('click', async () => {
+      const entry = undoStack.pop();
+      if (!entry) return;
+      try {
+        if (entry.type === 'departed') {
+          const res = await fetch('/api/us-calling-tracker/undo-departed', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+            body: JSON.stringify(entry.snapshot),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not undo.');
+          entry.recreatedId = data.entry.id;
+        } else {
+          await applyFieldChange(entry.id, entry.field, entry.oldValue);
+        }
+        redoStack.push(entry);
+        if (redoStack.length > MAX_HISTORY) redoStack.shift();
+        await loadEntries(true);
+      } catch (err) {
+        alert('Could not undo: ' + (err.message || 'unknown error'));
+        undoStack.push(entry);
+      }
+      updateUndoRedoButtons();
+    });
+    document.getElementById('redoBtn').addEventListener('click', async () => {
+      const entry = redoStack.pop();
+      if (!entry) return;
+      try {
+        if (entry.type === 'departed') {
+          const res = await fetch(`/api/us-calling-tracker/${entry.recreatedId}/departed`, { method: 'POST', credentials: 'include' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not redo.');
+        } else {
+          await applyFieldChange(entry.id, entry.field, entry.newValue);
+        }
+        undoStack.push(entry);
+        if (undoStack.length > MAX_HISTORY) undoStack.shift();
+        await loadEntries(true);
+      } catch (err) {
+        alert('Could not redo: ' + (err.message || 'unknown error'));
+        redoStack.push(entry);
+      }
+      updateUndoRedoButtons();
+    });
+
+    document.getElementById('editModeBtn').addEventListener('click', () => {
+      editMode = !editMode;
+      const btn = document.getElementById('editModeBtn');
+      btn.textContent = `✎ Edit Mode: ${editMode ? 'On' : 'Off'}`;
+      btn.classList.toggle('on', editMode);
+      document.getElementById('editHint').classList.toggle('show', editMode);
+      renderTable();
+    });
+
+    async function loadEntries(silent) {
+      const scrollBox = document.querySelector('.scroll-box');
+      const scrollLeft = scrollBox.scrollLeft;
+      const scrollTop = scrollBox.scrollTop;
+
+      const table = document.getElementById('trackerTable');
+      if (!silent) table.innerHTML = '<tr><td class="empty-state">Loading…</td></tr>';
+      const search = document.getElementById('searchInput').value.trim();
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+
+      const res = await fetch(`/api/us-calling-tracker?${params.toString()}`, { credentials: 'include' });
+      const data = await res.json();
+      entries = data.entries || [];
+      applyFilterAndSort();
+
+      scrollBox.scrollLeft = scrollLeft;
+      scrollBox.scrollTop = scrollTop;
+    }
+
+    function applyFilterAndSort() {
+      let list = entries.slice();
+      if (activeFilter === 'NOT_IN_VECS') list = list.filter((e) => !e.inVecs);
+      else if (activeFilter === 'DEPARTED') list = list.filter((e) => e.isDeparted);
+
+      const [field, dir] = sortKey.split('-');
+      const mul = dir === 'desc' ? -1 : 1;
+      list.sort((a, b) => {
+        let av, bv;
+        if (field === 'eta') { av = getTime(a.etaRaw) ?? Infinity; bv = getTime(b.etaRaw) ?? Infinity; }
+        else if (field === 'etd') { av = getTime(a.etdRaw) ?? Infinity; bv = getTime(b.etdRaw) ?? Infinity; }
+        else { av = a.vesselName.toLowerCase(); bv = b.vesselName.toLowerCase(); }
+        if (av < bv) return -1 * mul;
+        if (av > bv) return 1 * mul;
+        return 0;
+      });
+      displayEntries = list;
+      renderTable();
+    }
+    document.getElementById('sortSelect').addEventListener('change', (e) => { sortKey = e.target.value; applyFilterAndSort(); });
+
+    function editableTd(id, field, rawValue, displayValue, extraStyle) {
+      const style = extraStyle ? ` style="${extraStyle}"` : '';
+      return `<td class="editable" data-id="${id}" data-field="${field}" data-colkey="${field}" data-value="${esc(rawValue)}"${style}>${displayValue ?? '—'}</td>`;
+    }
+
+    function renderTable() {
+      const table = document.getElementById('trackerTable');
+      if (displayEntries.length === 0) {
+        table.innerHTML = '<tr><td class="empty-state">No entries. Add a vessel or import a file above.</td></tr>';
+        return;
+      }
+
+      const rows = displayEntries.map((e) => {
+        const checked = selected.has(e.id) ? 'checked' : '';
+        const nameStyle = !e.inVecs ? 'background:#fff200;' : '';
+        return `
+          <tr data-entry-id="${e.id}">
+            <td><input type="checkbox" class="rowCheck" data-id="${e.id}" ${checked} /></td>
+            <td data-colkey="vesselName" style="${nameStyle}">
+              <strong>${esc(e.vesselName)}</strong>
+              ${!e.inVecs ? ' <span class="badge badge-amber" title="Not yet on VECS List">Not in VECS</span>' : ''}
+              ${e.isDeparted ? ' <span class="badge badge-red" title="Marked Departed">Departed</span>' : ''}
+            </td>
+            ${editableTd(e.id, 'tech', e.tech, e.tech ?? '—')}
+            ${editableTd(e.id, 'etaRaw', e.etaRaw, dateCell(e.etaRaw))}
+            ${editableTd(e.id, 'etdRaw', e.etdRaw, dateCell(e.etdRaw))}
+            ${editableTd(e.id, 'arrivalPort', e.arrivalPort, e.arrivalPort ?? '—')}
+            ${editableTd(e.id, 'certificateStatus', e.certificateStatus, e.certificateStatus ?? '—')}
+            ${editableTd(e.id, 'qualship21ExpiryRaw', e.qualship21ExpiryRaw, dateCell(e.qualship21ExpiryRaw))}
+            ${editableTd(e.id, 'enoaSentForReview', e.enoaSentForReview, e.enoaSentForReview ?? '—')}
+            ${editableTd(e.id, 'usCallingMessageSentRaw', e.usCallingMessageSentRaw, dateCell(e.usCallingMessageSentRaw))}
+            ${editableTd(e.id, 'receivedFromVesselRaw', e.receivedFromVesselRaw, dateCell(e.receivedFromVesselRaw))}
+            ${editableTd(e.id, 'reviewedRaw', e.reviewedRaw, dateCell(e.reviewedRaw))}
+            ${editableTd(e.id, 'ballastWaterNbicRaw', e.ballastWaterNbicRaw, dateCell(e.ballastWaterNbicRaw))}
+            ${editableTd(e.id, 'ballastWaterCaWaOrRaw', e.ballastWaterCaWaOrRaw, dateCell(e.ballastWaterCaWaOrRaw))}
+            ${editableTd(e.id, 'biofoulingPlanRaw', e.biofoulingPlanRaw, dateCell(e.biofoulingPlanRaw))}
+            ${editableTd(e.id, 'marineInvasiveSpeciesRaw', e.marineInvasiveSpeciesRaw, dateCell(e.marineInvasiveSpeciesRaw))}
+            ${editableTd(e.id, 'flag', e.flag, e.flag ?? '—')}
+            ${editableTd(e.id, 'checklistSentRaw', e.checklistSentRaw, dateCell(e.checklistSentRaw))}
+            ${editableTd(e.id, 'pscChecklistRaw', e.pscChecklistRaw, dateCell(e.pscChecklistRaw))}
+            ${editableTd(e.id, 'remark', e.remark, e.remark ?? '—')}
+          </tr>
+        `;
+      }).join('');
+
+      table.innerHTML = `
+        <thead><tr>
+          <th style="width:32px;"></th>
+          ${COLUMNS.map((c) => `<th data-colkey="${c.key}">${c.label}</th>`).join('')}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      `;
+
+      table.querySelectorAll('.rowCheck').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id);
+          updateDepartButton();
+        });
+      });
+      if (editMode) {
+        table.querySelectorAll('td.editable').forEach((td) => { td.addEventListener('dblclick', () => startEdit(td)); });
+      }
+      applyColumnVisibility();
+    }
+
+    function updateDepartButton() {
+      document.getElementById('departSelectedBtn').disabled = selected.size === 0;
+      document.getElementById('selectionCount').textContent = selected.size > 0 ? `${selected.size} selected` : '';
+    }
+
+    const COLUMN_KIND = Object.fromEntries(COLUMNS.map((c) => [c.key, c.kind]));
+
+    function startEdit(td) {
+      if (td.classList.contains('editing')) return;
+      const field = td.dataset.field;
+      const id = td.dataset.id;
+      const currentValue = td.dataset.value || '';
+      const kind = COLUMN_KIND[field];
+      td.classList.add('editing');
+      const originalHtml = td.innerHTML;
+      const isDateField = kind === 'date';
+
+      let inputHtml;
+      if (kind === 'dropdown-yn') {
+        const options = ['', 'Yes', 'No'];
+        inputHtml = `<select>${options.map((o) => `<option value="${o}" ${o === currentValue ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
+      } else if (kind === 'date') {
+        inputHtml = `<input type="date" value="${ddMmYyyyToIso(currentValue)}" />`;
+      } else if (kind === 'date-or-status') {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" list="dateOrStatusOptions" placeholder="DD-MM-YYYY or NA" />`;
+      } else if (kind === 'suggest-port') {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" list="suggestions-arrivalPort" />`;
+      } else if (kind === 'suggest-flag') {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" list="suggestions-flag" />`;
+      } else {
+        inputHtml = `<input type="text" value="${esc(currentValue)}" />`;
+      }
+      td.innerHTML = inputHtml;
+      const inputEl = td.querySelector('input, select');
+      inputEl.focus();
+      if (inputEl.select) inputEl.select();
+
+      let saved = false;
+      const save = async () => {
+        if (saved) return;
+        const newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        saved = true;
+
+        if (newValue === currentValue) {
+          td.classList.remove('editing'); td.innerHTML = originalHtml;
+          return;
+        }
+        try {
+          await applyFieldChange(id, field, newValue);
+          undoStack.push({ type: 'field', id, field, oldValue: currentValue, newValue });
+          if (undoStack.length > MAX_HISTORY) undoStack.shift();
+          redoStack = [];
+          updateUndoRedoButtons();
+          await loadEntries(true);
+          if (field === 'arrivalPort' || field === 'flag') loadDynamicSuggestions();
+        } catch (err) {
+          alert(err.message || 'Could not reach the server.');
+          td.classList.remove('editing'); td.innerHTML = originalHtml;
+        }
+      };
+      inputEl.addEventListener('blur', save);
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); inputEl.blur(); }
+        if (e.key === 'Escape') { saved = true; td.classList.remove('editing'); td.innerHTML = originalHtml; }
+      });
+    }
+
+    async function loadDynamicSuggestions() {
+      for (const field of ['arrivalPort', 'flag']) {
+        try {
+          const res = await fetch(`/api/us-calling-tracker/distinct-values?field=${field}`, { credentials: 'include' });
+          const data = await res.json();
+          const datalist = document.getElementById(`suggestions-${field}`);
+          if (datalist && data.values) datalist.innerHTML = data.values.map((v) => `<option value="${esc(v)}">`).join('');
+        } catch {}
+      }
+    }
+
+    async function departEntries(items) {
+      const names = items.map((i) => i.name).filter(Boolean).join(', ');
+      if (!confirm(`Mark ${items.length} vessel(s) as Departed?\n${names}\n\nThis removes them from US Calling. If they exist on ENOA/D List or VECS List, they'll show a Departed badge there too.`)) return;
+      for (const item of items) {
+        const res = await fetch(`/api/us-calling-tracker/${item.id}/departed`, { method: 'POST', credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          undoStack.push({ type: 'departed', snapshot: data.snapshot });
+        }
+      }
+      if (undoStack.length > MAX_HISTORY) undoStack = undoStack.slice(-MAX_HISTORY);
+      redoStack = [];
+      updateUndoRedoButtons();
+      selected.clear();
+      updateDepartButton();
+      loadEntries(true);
+    }
+    document.getElementById('departSelectedBtn').addEventListener('click', () => {
+      const items = Array.from(selected).map((id) => {
+        const entry = entries.find((e) => e.id === id);
+        return { id, name: entry ? entry.vesselName : '' };
+      });
+      departEntries(items);
+    });
+
+    document.getElementById('selectAllBtn').addEventListener('click', () => {
+      displayEntries.forEach((e) => selected.add(e.id));
+      renderTable(); updateDepartButton();
+    });
+    document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+      selected.clear(); renderTable(); updateDepartButton();
+    });
+    document.getElementById('searchInput').addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadEntries, 300);
+    });
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault(); dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) doImport(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => { if (e.target.files[0]) doImport(e.target.files[0]); });
+    async function doImport(file) {
+      const status = document.getElementById('importStatus');
+      status.textContent = 'Importing…';
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch('/api/us-calling-tracker/import', { method: 'POST', credentials: 'include', body: formData });
+        const data = await res.json();
+        if (!res.ok) { status.textContent = data.error || 'Import failed.'; return; }
+        const s = data.summary;
+        status.textContent = `Done: ${s.created} added, ${s.updated} updated (${s.totalRows} rows in file).${s.warnings.length ? ' Warnings: ' + s.warnings.join('; ') : ''}`;
+        loadEntries();
+        loadDynamicSuggestions();
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      }
+    }
+
+    document.getElementById('downloadBtn').addEventListener('click', (e) => {
+      const hasActiveFilter = activeFilter !== 'ALL' || document.getElementById('searchInput').value.trim() !== '';
+      if (hasActiveFilter) {
+        e.preventDefault();
+        const ids = displayEntries.map((entry) => entry.id).join(',');
+        window.location.href = `/api/us-calling-tracker/export?ids=${encodeURIComponent(ids)}`;
+      }
+    });
+
+    document.getElementById('importToggleBtn').addEventListener('click', () => {
+      const section = document.getElementById('importSection');
+      const btn = document.getElementById('importToggleBtn');
+      const isOpen = section.style.display !== 'none';
+      section.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = (isOpen ? '▸' : '▾') + ' Import / Refresh from Excel';
+    });
+    document.getElementById('filtersToggleBtn').addEventListener('click', () => {
+      const section = document.getElementById('filtersSection');
+      const btn = document.getElementById('filtersToggleBtn');
+      const isOpen = section.style.display !== 'none';
+      section.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = (isOpen ? '▸' : '▾') + ' Filters & Sort';
+    });
+
+    document.getElementById('addVesselBtn').addEventListener('click', () => {
+      document.getElementById('addForm').reset();
+      document.getElementById('avResult').className = 'alert';
+      document.getElementById('addVesselOverlay').classList.add('show');
+      document.getElementById('avVesselName').focus();
+    });
+    document.getElementById('addVesselCancelBtn').addEventListener('click', () => {
+      document.getElementById('addVesselOverlay').classList.remove('show');
+    });
+    document.getElementById('addVesselOverlay').addEventListener('click', (e) => {
+      if (e.target.id === 'addVesselOverlay') document.getElementById('addVesselOverlay').classList.remove('show');
+    });
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const resultBox = document.getElementById('avResult');
+      const body = {
+        vesselName: document.getElementById('avVesselName').value,
+        tech: document.getElementById('avTech').value || undefined,
+        flag: document.getElementById('avFlag').value || undefined,
+        etaRaw: isoToDdMmYyyy(document.getElementById('avEta').value) || undefined,
+        etdRaw: isoToDdMmYyyy(document.getElementById('avEtd').value) || undefined,
+        arrivalPort: document.getElementById('avArrivalPort').value || undefined,
+        certificateStatus: document.getElementById('avCertificateStatus').value || undefined,
+        enoaSentForReview: document.getElementById('avEnoaSentForReview').value || undefined,
+        qualship21ExpiryRaw: document.getElementById('avQualship21ExpiryRaw').value || undefined,
+        usCallingMessageSentRaw: document.getElementById('avUsCallingMessageSentRaw').value || undefined,
+        receivedFromVesselRaw: document.getElementById('avReceivedFromVesselRaw').value || undefined,
+        reviewedRaw: document.getElementById('avReviewedRaw').value || undefined,
+        ballastWaterNbicRaw: document.getElementById('avBallastWaterNbicRaw').value || undefined,
+        ballastWaterCaWaOrRaw: document.getElementById('avBallastWaterCaWaOrRaw').value || undefined,
+        biofoulingPlanRaw: document.getElementById('avBiofoulingPlanRaw').value || undefined,
+        marineInvasiveSpeciesRaw: document.getElementById('avMarineInvasiveSpeciesRaw').value || undefined,
+        checklistSentRaw: document.getElementById('avChecklistSentRaw').value || undefined,
+        pscChecklistRaw: document.getElementById('avPscChecklistRaw').value || undefined,
+        remark: document.getElementById('avRemark').value || undefined,
+      };
+      try {
+        const res = await fetch('/api/us-calling-tracker', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          resultBox.className = 'alert alert-error show';
+          resultBox.textContent = data.error || 'Could not create entry.';
+          return;
+        }
+        document.getElementById('addVesselOverlay').classList.remove('show');
+        loadEntries(true);
+        loadDynamicSuggestions();
+      } catch {
+        resultBox.className = 'alert alert-error show';
+        resultBox.textContent = 'Could not reach the server.';
+      }
+    });
+
+    renderFilterChips();
+    renderColumnsPanel();
+    loadEntries();
+    loadDynamicSuggestions();
+
+    function connectLiveSync() {
+      const statusEl = document.getElementById('liveSyncStatus');
+      const source = new EventSource('/api/events/stream');
+      source.addEventListener('connected', () => { statusEl.textContent = '● Live'; statusEl.style.color = 'var(--green-600)'; });
+      source.addEventListener('us-calling-tracker-changed', () => loadEntries(true));
+      source.addEventListener('vessels-changed', () => loadEntries(true));
+      source.onerror = () => { statusEl.textContent = '○ Reconnecting…'; statusEl.style.color = 'var(--text-400)'; };
+    }
+    connectLiveSync();
+  </script>
+</body>
+</html>

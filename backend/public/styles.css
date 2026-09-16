@@ -93,6 +93,7 @@ body {
 }
 .topbar a:hover { background: var(--navy-700); color: #fff; }
 .topbar a.active { background: var(--blue-600); color: #fff; }
+.topbar a.nav-push-right { margin-left: auto; }
 
 /* --- Page header --- */
 .page-header {

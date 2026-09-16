@@ -16,6 +16,7 @@ import {
   previewApplyToVecs,
   exportEntriesToXlsx,
   markEntryDeparted,
+  undoEntryDeparted,
 } from '../services/uscalling/usCallingListEntryService';
 
 export const usCallingEntriesRouter = Router();
@@ -87,20 +88,58 @@ usCallingEntriesRouter.delete('/:id', asyncHandler(async (req, res) => {
 }));
 
 /**
- * "Departed" action — the fully manual replacement for auto-removal.
- * Deletes the entry AND flags the matching VECS vessel (if any) with
- * markedDepartedAt, so it shows a "Departed" badge there for the person
- * to review and manually remove whenever they're ready.
+ * "Departed" action — deletes the entry from ENOA/D List and records the
+ * shared cross-list Departed marker, so the badge shows on US Calling and
+ * VECS List too, wherever else this vessel currently appears. Returns a
+ * full snapshot so the frontend can offer a real Undo, not just a "too
+ * late" message.
  */
 usCallingEntriesRouter.post('/:id/departed', asyncHandler(async (req, res) => {
   try {
     const result = await markEntryDeparted(req.params.id);
     res.json(result);
     broadcast('us-calling-changed');
-    broadcast('vessels-changed'); // VECS List's Departed badge depends on this too
+    broadcast('vessels-changed');
+    broadcast('us-calling-tracker-changed');
   } catch (err) {
     throw new AppError(404, err instanceof Error ? err.message : 'Entry not found');
   }
+}));
+
+const undoDepartedSchema = z.object({
+  vesselName: z.string(),
+  voyageType: z.string().nullable().optional(),
+  transactionType: z.string().nullable().optional(),
+  sendTo: z.string().nullable().optional(),
+  arrivalPort: z.string().nullable().optional(),
+  etaRaw: z.string().nullable().optional(),
+  etdRaw: z.string().nullable().optional(),
+});
+
+/**
+ * Undoes a "Departed" action: recreates the entry from its snapshot and
+ * clears the shared Departed marker — a full reversal, not just bringing
+ * the row back with the badge still lingering elsewhere.
+ */
+usCallingEntriesRouter.post('/undo-departed', asyncHandler(async (req, res) => {
+  const parsed = undoDepartedSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return;
+  }
+  const entry = await undoEntryDeparted({
+    vesselName: parsed.data.vesselName,
+    voyageType: parsed.data.voyageType ?? null,
+    transactionType: parsed.data.transactionType ?? null,
+    sendTo: parsed.data.sendTo ?? null,
+    arrivalPort: parsed.data.arrivalPort ?? null,
+    etaRaw: parsed.data.etaRaw ?? null,
+    etdRaw: parsed.data.etdRaw ?? null,
+  });
+  res.json({ ok: true, entry });
+  broadcast('us-calling-changed');
+  broadcast('vessels-changed');
+  broadcast('us-calling-tracker-changed');
 }));
 
 usCallingEntriesRouter.post('/import', upload.single('file'), asyncHandler(async (req, res) => {
@@ -135,8 +174,10 @@ usCallingEntriesRouter.post('/apply-to-vecs', asyncHandler(async (req, res) => {
   broadcast('vessels-changed');
 }));
 
-usCallingEntriesRouter.get('/export', asyncHandler(async (_req, res) => {
-  const { buffer, filename } = await exportEntriesToXlsx();
+usCallingEntriesRouter.get('/export', asyncHandler(async (req, res) => {
+  const idsParam = typeof req.query.ids === 'string' ? req.query.ids : undefined;
+  const ids = idsParam ? idsParam.split(',').filter(Boolean) : undefined;
+  const { buffer, filename } = await exportEntriesToXlsx(ids);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);

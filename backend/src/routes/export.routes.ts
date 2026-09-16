@@ -14,8 +14,10 @@ exportRouter.use(requireAuth);
  * images); would need to become a background job if that scale changed
  * substantially.
  */
-exportRouter.get('/master-xlsx', asyncHandler(async (_req, res) => {
-  const result = await generateMasterExport();
+exportRouter.get('/master-xlsx', asyncHandler(async (req, res) => {
+  const idsParam = typeof req.query.ids === 'string' ? req.query.ids : undefined;
+  const ids = idsParam ? idsParam.split(',').filter(Boolean) : undefined;
+  const result = await generateMasterExport(ids);
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);

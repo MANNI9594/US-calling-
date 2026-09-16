@@ -1,6 +1,5 @@
 import ExcelJS from 'exceljs';
 import { formatAsCallingListDate } from '../../utils/parseOperationalDate';
-import { extractCellText } from '../excel/extractCellText';
 
 /**
  * Reads a US Calling List upload — the recurring, day-to-day file, distinct
@@ -65,7 +64,7 @@ export async function readUsCallingList(fileBuffer: Buffer): Promise<UsCallingLi
   const headerRow = sheet.getRow(1);
   const columnMap = new Map<number, keyof Omit<UsCallingListRow, 'rowNumber'>>();
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const normalized = normalizeHeader(extractCellText(cell.value));
+    const normalized = normalizeHeader(String(cell.value ?? ''));
     const mapped = HEADER_ALIASES[normalized];
     if (mapped) columnMap.set(colNumber, mapped);
   });
@@ -108,7 +107,7 @@ export async function readUsCallingList(fileBuffer: Buffer): Promise<UsCallingLi
       } else if (typeof raw === 'object' && 'result' in (raw as object)) {
         value = String((raw as { result?: string | number }).result ?? '') || null;
       } else {
-        value = extractCellText(raw).trim() || null;
+        value = String(raw).trim() || null;
       }
       if (value) hasAnyValue = true;
       partial[field] = value;

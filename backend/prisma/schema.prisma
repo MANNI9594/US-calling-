@@ -96,6 +96,15 @@ model Vessel {
   archivedAt           DateTime? @map("archived_at")
   restoredAt           DateTime? @map("restored_at")
 
+  // Set when the vessel is marked "Departed" from the ENOA/D List
+  // (a manual, human decision — this app never auto-removes a vessel from
+  // VECS List on its own). Shown as a badge next to the vessel name.
+  // Automatically cleared back to null the moment fresh operational data
+  // is applied to this vessel from ENOA/D List again — new data arriving
+  // means the vessel is active again, so a stale "Departed" flag would be
+  // actively misleading if left in place.
+  markedDepartedAt DateTime? @map("marked_departed_at")
+
   callingRecords VesselCallingRecord[]
   evidence       VesselEvidence[]
   dataQualityIssues DataQualityIssue[]
@@ -497,92 +506,4 @@ model SharedDocument {
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@map("shared_documents")
-}
-
-// ----------------------------------------------------------------------------
-// US CALLING TRACKER — the earliest stage in the 3-list pipeline:
-// US Calling (this) -> ENOA/D List -> VECS List. A vessel is added here the
-// moment it's known to be calling a US port, before its ENOA is received.
-//
-// Named "UsCallingTrackerEntry" internally (not "UsCallingListEntry" — that
-// name was already taken by the ENOA/D List's backend model, a leftover
-// from before that page was renamed from "US Calling List" to "ENOA/D
-// List"). The person using the app only ever sees this called "US Calling".
-//
-// Most of the tracking columns here hold either a genuine completion date
-// OR a non-date status ("NA", "-", "Not Eligible") depending on whether
-// that step has happened yet — confirmed against the user's real file, not
-// assumed. Only ETA/ETD are true, date-only fields; every other date-ish
-// column is stored as free text with a quick-pick suggestion list on the
-// frontend (see us-calling-tracker.html), never a native date picker that
-// couldn't hold a non-date value.
-// ----------------------------------------------------------------------------
-
-model UsCallingTrackerEntry {
-  id String @id @default(uuid())
-
-  vesselName           String @map("vessel_name")
-  vesselNameNormalized String @map("vessel_name_normalized") // for matching against Vessel (VECS List) — powers the "Not in VECS List" flag/filter
-  tech                 String? // technical manager/team code, e.g. "HK Tech D11" — free text, nature unconfirmed with the user, safest default
-
-  etaRaw    String?   @map("eta_raw") // DD-MM-YYYY, real date only — confirmed with the user, "In Port" is not used here
-  etaParsed DateTime? @map("eta_parsed")
-  etdRaw    String?   @map("etd_raw")
-  etdParsed DateTime? @map("etd_parsed")
-
-  arrivalPort String? @map("arrival_port") // dynamic/learned suggestions on the frontend, same pattern as elsewhere in the app
-  flag        String? // dynamic/learned suggestions on the frontend, same pattern as elsewhere in the app
-
-  certificateStatus String? @map("certificate_status") // free text — e.g. "MFSA Enrolled", "OSRO Enrolled", "-"
-  enoaSentForReview String? @map("enoa_sent_for_review") // true fixed dropdown: Yes / No
-
-  // Every field below is a "date-or-status" column: usually a completion
-  // date (DD-MM-YYYY), but frequently "NA", "-", or (Qualship 21 only)
-  // "Not Eligible" when that step doesn't apply yet. Stored as plain text;
-  // the frontend offers a quick-pick list of the non-date values while
-  // still accepting a typed real date.
-  qualship21ExpiryRaw      String? @map("qualship21_expiry_raw")
-  usCallingMessageSentRaw  String? @map("us_calling_message_sent_raw")
-  receivedFromVesselRaw    String? @map("received_from_vessel_raw")
-  reviewedRaw              String? @map("reviewed_raw") // column header says "Reviewed or not" but real data holds dates, not Yes/No
-  ballastWaterNbicRaw      String? @map("ballast_water_nbic_raw")
-  ballastWaterCaWaOrRaw    String? @map("ballast_water_ca_wa_or_raw")
-  biofoulingPlanRaw        String? @map("biofouling_plan_raw")
-  marineInvasiveSpeciesRaw String? @map("marine_invasive_species_raw")
-  checklistSentRaw         String? @map("checklist_sent_raw") // Hong Kong/Marshall/Panama/Liberia/Singapore checklist
-  pscChecklistRaw          String? @map("psc_checklist_raw")
-
-  remark String? // free text
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([vesselNameNormalized])
-  @@map("us_calling_tracker_entries")
-}
-
-// ----------------------------------------------------------------------------
-// DEPARTED VESSEL MARKER — shared "this vessel has departed" registry,
-// keyed by normalized vessel name rather than tied to a specific Vessel
-// (VECS) row. Deliberately NOT stored on the Vessel model: a vessel can be
-// marked Departed from US Calling or ENOA/D List *before* it ever reaches
-// VECS List, so the marker must be able to exist independent of whether a
-// matching VECS vessel record exists yet. All three lists (US Calling,
-// ENOA/D List, VECS List) check against this same table for their
-// "Departed" badge and filter — marking departed from any one of them
-// makes the badge appear everywhere else that vessel is currently tracked.
-//
-// "Departed" means different concrete things depending on which list it
-// was clicked from (see the relevant service functions), but the marker
-// itself is the same for all three: one shared signal, three different
-// consequences.
-// ----------------------------------------------------------------------------
-
-model DepartedVesselMarker {
-  id                   String   @id @default(uuid())
-  vesselNameNormalized String   @unique @map("vessel_name_normalized")
-  vesselName           String   @map("vessel_name") // display name as last seen, for showing in UI without a join
-  departedAt           DateTime @default(now()) @map("departed_at")
-
-  @@map("departed_vessel_markers")
 }

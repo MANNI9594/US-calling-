@@ -103,9 +103,9 @@ interface ExportVesselRow {
   evidenceStorageKey: string | null;
 }
 
-async function loadActiveVesselsForExport(ids?: string[]): Promise<ExportVesselRow[]> {
+async function loadActiveVesselsForExport(): Promise<ExportVesselRow[]> {
   const vessels = await prisma.vessel.findMany({
-    where: { status: 'ACTIVE', ...(ids ? { id: { in: ids } } : {}) },
+    where: { status: 'ACTIVE' },
     include: {
       callingRecords: { where: { isCurrent: true }, take: 1 },
       evidence: {
@@ -192,17 +192,9 @@ export interface MasterExportResult {
   imagesPlaced: number;
 }
 
-/**
- * Generates the VECS Master export. If `ids` is provided, exports only
- * those vessels — the currently-filtered/displayed set on the frontend —
- * rather than every active vessel. Same "download respects the current
- * filter" behavior applied consistently across every list in this app;
- * the person can always get the full list back simply by clearing
- * filters before downloading.
- */
-export async function generateMasterExport(ids?: string[]): Promise<MasterExportResult> {
+export async function generateMasterExport(): Promise<MasterExportResult> {
   const template = await loadStyleTemplate();
-  const rows = await loadActiveVesselsForExport(ids);
+  const rows = await loadActiveVesselsForExport();
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(template.sheetName);

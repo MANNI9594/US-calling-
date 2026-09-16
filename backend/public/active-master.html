@@ -65,14 +65,6 @@
   .dropdown-panel .panel-actions button { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
   select#sortSelect { font-size: 0.85rem; padding: 8px 10px; }
 
-  .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
-  .kpi-card {
-    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 10px 16px; box-shadow: var(--shadow-sm); min-width: 140px;
-  }
-  .kpi-card .kpi-value { font-size: 1.4rem; font-weight: 700; color: var(--text-900); }
-  .kpi-card .kpi-label { font-size: 0.75rem; color: var(--text-600); margin-top: 2px; }
-
   .dropzone-mini {
     border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 16px;
     text-align: center; color: var(--text-600); cursor: pointer; background: var(--bg-subtle); font-size: 0.85rem;
@@ -89,10 +81,9 @@
 <body>
   <nav class="topbar">
     <span class="brand">US Calling <span>Master</span></span>
-    <a href="/us-calling-tracker.html">US Calling</a>
     <a href="/active-master.html" class="active">VECS List</a>
     <a href="/us-calling-list.html">ENOA/D List</a>
-    <a href="/links-docs.html" class="nav-push-right">Quick Links &amp; Docs</a>
+    <a href="/links-docs.html">Quick Links &amp; Docs</a>
     <a href="/settings.html">Settings</a>
   </nav>
 
@@ -104,7 +95,7 @@
       </div>
       <div class="header-actions">
         <a href="/us-calling-list.html" class="btn btn-secondary">⇄ Update from ENOA/D List</a>
-        <a href="/api/export/master-xlsx" id="downloadBtn" class="btn btn-accent">⬇ Download Updated Master XLSX</a>
+        <a href="/api/export/master-xlsx" class="btn btn-accent">⬇ Download Updated Master XLSX</a>
       </div>
     </div>
 
@@ -131,8 +122,6 @@
         <div id="masterResultCard" style="display:none; margin-top: 12px;"></div>
       </div>
     </div>
-
-    <div class="kpi-row" id="kpiRow"></div>
 
     <div class="chip-row" id="tabs"></div>
 
@@ -293,7 +282,6 @@
     const FILTERS = [
       { key: 'ALL', label: 'All Vessels', dot: 'blue' },
       { key: 'PAST_ETD', label: 'Past ETD', dot: 'red' },
-      { key: 'DEPARTED', label: 'Departed', dot: 'red' },
       { key: 'NO_EVIDENCE', label: 'No Evidence', dot: 'amber' },
       { key: 'HAS_FLAGS', label: 'Has Flags', dot: 'amber' },
     ];
@@ -348,17 +336,7 @@
       const entry = undoStack.pop();
       if (!entry) return;
       try {
-        if (entry.type === 'departed') {
-          const res = await fetch('/api/vessels/restore', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ vesselIds: [entry.vesselId] }),
-          });
-          if (!res.ok) throw new Error((await res.json()).error || 'Could not undo.');
-        } else {
-          await applyFieldChange(entry.vesselId, entry.field, entry.oldValue);
-        }
+        await applyFieldChange(entry.vesselId, entry.field, entry.oldValue);
         redoStack.push(entry);
         if (redoStack.length > MAX_HISTORY) redoStack.shift();
         await loadVessels(true);
@@ -373,17 +351,7 @@
       const entry = redoStack.pop();
       if (!entry) return;
       try {
-        if (entry.type === 'departed') {
-          const res = await fetch('/api/vessels/archive', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ vesselIds: [entry.vesselId] }),
-          });
-          if (!res.ok) throw new Error((await res.json()).error || 'Could not redo.');
-        } else {
-          await applyFieldChange(entry.vesselId, entry.field, entry.newValue);
-        }
+        await applyFieldChange(entry.vesselId, entry.field, entry.newValue);
         undoStack.push(entry);
         if (undoStack.length > MAX_HISTORY) undoStack.shift();
         await loadVessels(true);
@@ -424,7 +392,7 @@
       });
 
       const actionBtn = document.getElementById('actionBtn');
-      actionBtn.textContent = activeTab === 'ACTIVE' ? 'Departed' : 'Restore Selected';
+      actionBtn.textContent = activeTab === 'ACTIVE' ? 'Remove Selected' : 'Restore Selected';
       actionBtn.className = 'btn ' + (activeTab === 'ACTIVE' ? 'btn-danger' : 'btn-accent');
     }
 
@@ -452,7 +420,6 @@
       const data = await res.json();
       vessels = data.vessels || [];
       applyFilterAndSort();
-      renderKpis();
 
       // Restore scroll position — a routine refresh after saving one cell
       // shouldn't ever bounce you back to the top-left of a wide table.
@@ -507,8 +474,6 @@
 
       if (activeFilter === 'PAST_ETD') {
         list = list.filter(hasPastEtd);
-      } else if (activeFilter === 'DEPARTED') {
-        list = list.filter((v) => Boolean(v.isDeparted));
       } else if (activeFilter === 'NO_EVIDENCE') {
         list = list.filter((v) => !(v.evidence || []).length);
       } else if (activeFilter === 'HAS_FLAGS') {
@@ -542,36 +507,10 @@
       return `<td class="editable" data-field="${field}" data-colkey="${field}" data-value="${esc(rawValue)}"${style}>${displayValue ?? '—'}</td>`;
     }
     function chinaHighlightStyle(value) {
-      return isChina(value) ? 'background: #fff200;' : '';
+      return value && value.toLowerCase().includes('china') ? 'background: #fff200;' : '';
     }
     function serviceFeesYellowStyle(serviceFeesApplicable) {
       return serviceFeesApplicable === 'YES' || serviceFeesApplicable === 'NO' ? 'background: #fff200;' : '';
-    }
-
-    function isChina(value) {
-      return Boolean(value && value.toLowerCase().includes('china'));
-    }
-
-    function renderKpis() {
-      const kpiRow = document.getElementById('kpiRow');
-      const chinaBuilt = vessels.filter((v) => isChina(v.builtLocation)).length;
-      const feesYes = vessels.filter((v) => v.serviceFeesApplicable === 'YES').length;
-      const feesNo = vessels.filter((v) => v.serviceFeesApplicable === 'NO').length;
-      const bridgeLetterYes = vessels.filter((v) => v.bridgeLetter && v.bridgeLetter.trim() !== '').length;
-
-      const kpis = [
-        { label: 'Chinese-Built Vessels', value: chinaBuilt },
-        { label: 'Service Fees: Yes', value: feesYes },
-        { label: 'Service Fees: No', value: feesNo },
-        { label: 'Bridge Letter on File', value: bridgeLetterYes },
-      ];
-
-      kpiRow.innerHTML = kpis.map((k) => `
-        <div class="kpi-card">
-          <div class="kpi-value">${k.value}</div>
-          <div class="kpi-label">${k.label} (${activeTab === 'ACTIVE' ? 'Active' : 'Archived'})</div>
-        </div>
-      `).join('');
     }
 
     function renderTable() {
@@ -598,7 +537,7 @@
           <tr class="${past ? 'flagged' : ''}" data-vessel-id="${v.id}">
             <td><input type="checkbox" class="rowCheck" data-id="${v.id}" ${checked} /></td>
             <td data-colkey="sr">${idx + 1}</td>
-            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${v.isDeparted ? '<span class="badge badge-red" title="Marked Departed">Departed</span>' : ''} ${past ? `<span class="badge badge-red" title="${esc(dqTooltipText(v))}">Past ETD</span>` : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber" title="${esc(dqTooltipText(v))}">${openDqCount(v)} flag(s)</span>` : ''}</td>
+            <td><span class="vessel-link" data-id="${v.id}">${v.vesselName}</span> ${v.markedDepartedAt ? '<span class="badge badge-red" title="Marked Departed from ENOA/D List">Departed</span>' : ''} ${past ? `<span class="badge badge-red" title="${esc(dqTooltipText(v))}">Past ETD</span>` : ''} ${openDqCount(v) > 0 && !past ? `<span class="badge badge-amber" title="${esc(dqTooltipText(v))}">${openDqCount(v)} flag(s)</span>` : ''}</td>
             ${editableTd('imoNumber', v.imoNumber, v.imoNumber ?? '—')}
             ${editableTd('flag', v.flag, v.flag ?? '—')}
             ${editableTd('vesselType', v.vesselType, v.vesselType ?? '—')}
@@ -725,7 +664,7 @@
 
         try {
           await applyFieldChange(vesselId, field, newValue);
-          undoStack.push({ type: 'field', vesselId, field, oldValue: currentValue, newValue });
+          undoStack.push({ vesselId, field, oldValue: currentValue, newValue });
           if (undoStack.length > MAX_HISTORY) undoStack.shift();
           redoStack = [];
           updateUndoRedoButtons();
@@ -1029,21 +968,19 @@
 
     document.getElementById('actionBtn').addEventListener('click', async () => {
       if (selected.size === 0) return;
-      const isDeparting = activeTab === 'ACTIVE';
-      const verb = isDeparting ? 'mark Departed (archive)' : 'restore';
-      if (!confirm(`${verb.charAt(0).toUpperCase() + verb.slice(1)} ${selected.size} vessel(s)? ${isDeparting ? 'Their information will be archived and can be restored later.' : ''}`)) {
+      const verb = activeTab === 'ACTIVE' ? 'remove and archive' : 'restore';
+      if (!confirm(`${verb.charAt(0).toUpperCase() + verb.slice(1)} ${selected.size} vessel(s)? ${activeTab === 'ACTIVE' ? 'Their information will be archived and can be restored later.' : ''}`)) {
         return;
       }
 
-      const selectedIds = Array.from(selected);
-      const endpoint = isDeparting ? '/api/vessels/archive' : '/api/vessels/restore';
+      const endpoint = activeTab === 'ACTIVE' ? '/api/vessels/archive' : '/api/vessels/restore';
       const message = document.getElementById('message');
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ vesselIds: selectedIds }),
+          body: JSON.stringify({ vesselIds: Array.from(selected) }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -1051,21 +988,9 @@
           message.textContent = data.error || 'Action failed.';
           return;
         }
-
-        // Push one undo entry per vessel so Undo correctly reverses each
-        // individually, regardless of how many were selected at once.
-        if (isDeparting) {
-          for (const vesselId of selectedIds) {
-            undoStack.push({ type: 'departed', vesselId });
-          }
-          if (undoStack.length > MAX_HISTORY) undoStack = undoStack.slice(-MAX_HISTORY);
-          redoStack = [];
-          updateUndoRedoButtons();
-        }
-
         message.className = 'alert alert-success show';
         const count = data.archived ?? data.restored ?? 0;
-        message.textContent = `Done: ${count} vessel(s) ${isDeparting ? 'marked Departed' : 'restored'}${data.skipped ? `, ${data.skipped} skipped (already in that state)` : ''}.`;
+        message.textContent = `Done: ${count} vessel(s) ${activeTab === 'ACTIVE' ? 'removed and archived' : 'restored'}${data.skipped ? `, ${data.skipped} skipped (already in that state)` : ''}.`;
         selected.clear();
         updateActionButton();
         loadVessels(true);
@@ -1083,19 +1008,6 @@
       section.style.display = isOpen ? 'none' : 'block';
       btn.textContent = (isOpen ? '▸' : '▾') + ' Import Master Workbook';
     });
-    // Download respects whatever filter/search is currently active — the
-    // export contains exactly what's on screen. Clear filters first to
-    // download everything again.
-    document.getElementById('downloadBtn').addEventListener('click', (e) => {
-      const hasActiveFilter = activeFilter !== 'ALL' || document.getElementById('searchInput').value.trim() !== '';
-      if (hasActiveFilter) {
-        e.preventDefault();
-        const ids = displayVessels.map((v) => v.id).join(',');
-        window.location.href = `/api/export/master-xlsx?ids=${encodeURIComponent(ids)}`;
-      }
-      // else: let the plain href navigate normally (full, unfiltered export)
-    });
-
     document.getElementById('filtersToggleBtn').addEventListener('click', () => {
       const section = document.getElementById('filtersSection');
       const btn = document.getElementById('filtersToggleBtn');

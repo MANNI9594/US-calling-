@@ -6,7 +6,6 @@ import { readUsCallingList, type UsCallingListRow } from './usCallingListReader'
 import { runCommitTransaction, type CallingListCommitSummary } from './usCallingImportService';
 import { matchCallingListRow, type CallingListVesselCandidate } from './callingListMatching';
 import { logAudit } from '../audit/auditService';
-import { markVesselDeparted, clearVesselDeparted, getDepartedNormalizedNames } from '../departed/departedVesselService';
 
 export interface EntryInput {
   vesselName: string;
@@ -26,14 +25,12 @@ function parsedDatesFor(etaRaw: string | null | undefined, etdRaw: string | null
 }
 
 export async function listEntries(search?: string) {
-  const entries = await prisma.usCallingListEntry.findMany({
+  return prisma.usCallingListEntry.findMany({
     where: search
       ? { vesselName: { contains: search, mode: 'insensitive' } }
       : undefined,
     orderBy: { vesselName: 'asc' },
   });
-  const departedNames = await getDepartedNormalizedNames();
-  return entries.map((e: { vesselNameNormalized: string }) => ({ ...e, isDeparted: departedNames.has(e.vesselNameNormalized) }));
 }
 
 export async function createEntry(input: EntryInput) {
@@ -226,12 +223,9 @@ export interface UsCallingListExportResult {
  * original 7-column US Calling List format — a simple flat sheet, no
  * embedded images/styling template needed (unlike the VECS Master export).
  */
-export async function exportEntriesToXlsx(ids?: string[]): Promise<UsCallingListExportResult> {
+export async function exportEntriesToXlsx(): Promise<UsCallingListExportResult> {
   const ExcelJS = (await import('exceljs')).default;
-  const entries = await prisma.usCallingListEntry.findMany({
-    where: ids ? { id: { in: ids } } : undefined,
-    orderBy: { vesselName: 'asc' },
-  });
+  const entries = await prisma.usCallingListEntry.findMany({ orderBy: { vesselName: 'asc' } });
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('US Calling List');
@@ -314,62 +308,37 @@ export async function previewApplyToVecs(): Promise<ApplyToVecsPreview> {
   return { counts };
 }
 
+/**
+ * Marks a vessel "Departed" — the fully manual replacement for the
+ * auto-removal feature this app used to have. Called when the user clicks
+ * "Departed" on an ENOA/D List row: deletes that entry from the working
+ * list AND, if a matching VECS vessel exists (by normalized name), flags
+ * it with `markedDepartedAt` so VECS List can show a "Departed" badge next
+ * to its name — a visual heads-up for the person to review and manually
+ * remove it themselves, never an automatic removal.
+ */
 export interface MarkDepartedResult {
   entryDeleted: boolean;
-  snapshot: {
-    vesselName: string;
-    voyageType: string | null;
-    transactionType: string | null;
-    sendTo: string | null;
-    arrivalPort: string | null;
-    etaRaw: string | null;
-    etdRaw: string | null;
-  };
+  vesselFlagged: { id: string; vesselName: string } | null;
 }
 
-/**
- * Marks a vessel Departed from ENOA/D List: deletes the entry AND records
- * the shared cross-list Departed marker (see departedVesselService.ts) so
- * the badge shows on US Calling and VECS List too, wherever else this
- * vessel currently appears — independent of whether a matching VECS
- * vessel exists yet.
- *
- * Returns a full snapshot of the deleted entry's data, not just its id —
- * Undo needs to recreate an equivalent entry (a delete can't be undone by
- * replaying a field-value diff the way a normal edit can), and the
- * original id is gone the moment this transaction commits.
- */
 export async function markEntryDeparted(entryId: string): Promise<MarkDepartedResult> {
   const entry = await prisma.usCallingListEntry.findUnique({ where: { id: entryId } });
   if (!entry) throw new Error('Entry not found');
 
+  const matchedVessel = await prisma.vessel.findFirst({
+    where: { vesselNameNormalized: entry.vesselNameNormalized, status: 'ACTIVE' },
+  });
+
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.usCallingListEntry.delete({ where: { id: entryId } });
+    if (matchedVessel) {
+      await tx.vessel.update({ where: { id: matchedVessel.id }, data: { markedDepartedAt: new Date() } });
+    }
   });
-  await markVesselDeparted(entry.vesselName);
 
   return {
     entryDeleted: true,
-    snapshot: {
-      vesselName: entry.vesselName,
-      voyageType: entry.voyageType,
-      transactionType: entry.transactionType,
-      sendTo: entry.sendTo,
-      arrivalPort: entry.arrivalPort,
-      etaRaw: entry.etaRaw,
-      etdRaw: entry.etdRaw,
-    },
+    vesselFlagged: matchedVessel ? { id: matchedVessel.id, vesselName: matchedVessel.vesselName } : null,
   };
-}
-
-/**
- * Undoes a "Departed" action from ENOA/D List: recreates the entry from
- * its snapshot (a new id — the original is gone, but the data is
- * identical) and clears the shared Departed marker, since undoing a
- * departure should undo the cross-list badge too.
- */
-export async function undoEntryDeparted(snapshot: MarkDepartedResult['snapshot']) {
-  const entry = await createEntry(snapshot);
-  await clearVesselDeparted(snapshot.vesselName);
-  return entry;
 }

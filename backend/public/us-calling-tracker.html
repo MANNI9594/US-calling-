@@ -26,6 +26,10 @@
   }
   .scroll-box table.data-table td { white-space: normal; word-break: break-word; max-width: 200px; }
   .scroll-box table.data-table td.editable { min-width: 90px; }
+  /* Vessel Name stays fully visible on one line, never wrapped — every
+     other long header wraps, but the vessel's own name is the one thing
+     that should always read cleanly at a glance. */
+  .scroll-box table.data-table td[data-colkey="vesselName"] { white-space: nowrap; max-width: none; }
 
   td.editable { cursor: pointer; }
   td.editable:hover { background: var(--blue-50); outline: 1px dashed var(--blue-100); }

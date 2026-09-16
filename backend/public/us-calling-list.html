@@ -524,6 +524,7 @@
 
     function startEdit(td) {
       if (td.classList.contains('editing')) return;
+      td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
       const field = td.dataset.field;
       const id = td.dataset.id;
       const currentValue = td.dataset.value || '';
@@ -546,6 +547,7 @@
       const inputEl = td.querySelector('input, select');
       inputEl.focus();
       if (inputEl.select) inputEl.select();
+      requestAnimationFrame(() => td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }));
 
       let saved = false;
       const save = async () => {

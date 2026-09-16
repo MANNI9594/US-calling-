@@ -676,6 +676,7 @@
 
     function startEdit(td) {
       if (td.classList.contains('editing')) return;
+      td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
       const field = td.dataset.field;
       const currentValue = td.dataset.value || '';
       const row = td.closest('tr');
@@ -708,6 +709,10 @@
       const inputEl = td.querySelector('input, select');
       inputEl.focus();
       if (inputEl.select) inputEl.select();
+      // Scroll again once the (now-wider) input has actually rendered —
+      // the first scroll was based on the cell's narrow pre-edit size, so
+      // this catches any shift caused by the column widening to fit it.
+      requestAnimationFrame(() => td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }));
 
       let saved = false;
       const isDateField = field === 'etaRaw' || field === 'etdRaw';

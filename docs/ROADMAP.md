@@ -583,3 +583,13 @@ Real bug found via a screenshot: several vessels showed their ETD date in red (c
 **Root cause**: two completely different checks were being used for what should be one concept. The red ETD text was computed live — comparing the vessel's actual parsed ETD against the current date on every render. The badge, meanwhile, checked for a *stored* `PAST_ETD` data-quality-issue record in the database — which only gets raised at specific moments (import, edit) and can silently go stale or simply never get created, depending on how a vessel's data arrived.
 
 **Fixed** by making both use the exact same live calculation (`isEtdPastDue`), applied consistently to the badge, the row highlighting, the red ETD text, and the "Past ETD" filter chip — one single source of truth instead of two that could disagree.
+
+## Corrected an earlier wrong answer: evidence images now use the anchor type that travels with copy-paste
+
+Earlier in this session I told the user this was a "fundamental Excel limitation, true for any file" — that was wrong, and stated with more confidence than the evidence supported. The user pushed back with a real example of a different file where copying cells *did* bring the image along, which prompted a proper investigation instead of accepting my first answer.
+
+**The actual, verified explanation**: OOXML supports two image anchor types. This export was using `oneCellAnchor` — a fixed-size image pinned to one cell's corner, which does NOT travel with a normal copy-paste of the cell range. Excel's own UI, when a picture is inserted manually, defaults to `twoCellAnchor` with `editAs="twoCell"` ("move and size with cells") — a fundamentally different anchor bound to both corners of the cell.
+
+**Fixed** by switching the export's image placement from `tl + ext` (oneCellAnchor) to `tl + br + editAs: 'twoCell'` (twoCellAnchor), computing the same centered, smaller-than-the-column sizing as before but expressed as the bottom-right corner instead of a fixed pixel extent. Verified this actually works by inspecting the real XML the export produces (`tests/exportImageCentering.test.ts` now asserts on the literal `<xdr:twoCellAnchor>` / `editAs="twoCell"` markup, not just the in-memory object model) — not by re-asserting confidence without checking.
+
+**Honest limit of what's verified**: the file structure now matches exactly what Excel itself produces for a manually-inserted, "move and size with cells" picture — this is the correct, evidence-based fix. Whether Excel's copy-paste UI action itself now carries the image in every version of Excel is something that can only be confirmed by testing in real Excel, since this sandbox has no way to drive a live Excel session.

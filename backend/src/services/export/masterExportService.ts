@@ -325,17 +325,32 @@ export async function generateMasterExport(ids?: string[]): Promise<MasterExport
         const extension = (dims.type === 'jpg' ? 'jpeg' : dims.type) as 'png' | 'jpeg' | 'gif';
         const imageId = workbook.addImage({ buffer: imgBuffer as unknown as ExcelJS.Buffer, extension });
 
-        // Center the (now deliberately smaller) image within its cell,
-        // rather than anchoring it at the top-left corner — computed as a
-        // fraction of one column/row width, which ExcelJS supports
-        // directly and which survives a real write+read round-trip
-        // (verified before relying on this).
+        // Center the (deliberately smaller-than-the-column) image within
+        // its cell, computed as a fraction of one column/row width.
         const colOffsetFraction = fullColumnWidthPx ? Math.max(0, (fullColumnWidthPx - placement.width) / 2 / fullColumnWidthPx) : 0;
         const rowOffsetFraction = fullRowHeightPx ? Math.max(0, (fullRowHeightPx - placement.height) / 2 / fullRowHeightPx) : 0;
+        const tlCol = 11 + colOffsetFraction;
+        const tlRow = excelRowNumber - 1 + rowOffsetFraction;
 
+        // Anchored with an explicit bottom-right corner (br) and
+        // editAs: 'twoCell' — the exact anchor type Excel itself uses by
+        // default for a manually-inserted picture ("Move and size with
+        // cells"), rather than the fixed-size "oneCellAnchor" this export
+        // used before. Confirmed by inspecting the actual XML this
+        // produces (twoCellAnchor / editAs="twoCell"), not assumed —
+        // oneCellAnchor images are known not to travel with a normal
+        // copy-paste of the cell range in Excel, which twoCellAnchor
+        // fixes. (Whether this fully resolves copy-paste in every version
+        // of Excel can only be confirmed by testing in real Excel — this
+        // is the correct anchor type, verified at the file-structure
+        // level, not a guarantee of runtime UI behavior I can't execute here.)
         sheet.addImage(imageId, {
-          tl: { col: 11 + colOffsetFraction, row: excelRowNumber - 1 + rowOffsetFraction },
-          ext: { width: placement.width, height: placement.height },
+          tl: { col: tlCol, row: tlRow },
+          br: {
+            col: tlCol + (fullColumnWidthPx ? placement.width / fullColumnWidthPx : 0),
+            row: tlRow + (fullRowHeightPx ? placement.height / fullRowHeightPx : 0),
+          },
+          editAs: 'twoCell',
         } as unknown as ExcelJS.ImageRange);
         imagesPlaced += 1;
       } catch {

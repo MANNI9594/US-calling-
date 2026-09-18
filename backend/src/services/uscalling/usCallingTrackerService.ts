@@ -44,8 +44,12 @@ async function annotateWithVecsPresence<T extends { vesselNameNormalized: string
   entries: T[],
 ): Promise<Array<T & { inVecs: boolean; isDeparted: boolean }>> {
   if (entries.length === 0) return [];
+  // Only ACTIVE VECS vessels count as "in VECS" — an archived vessel
+  // isn't actually being tracked there either, so treating it as "present"
+  // would incorrectly suppress the yellow highlight for a vessel that
+  // genuinely needs attention (either re-adding, or restoring on VECS).
   const vecsNames = new Set(
-    (await prisma.vessel.findMany({ select: { vesselNameNormalized: true } })).map(
+    (await prisma.vessel.findMany({ where: { status: 'ACTIVE' }, select: { vesselNameNormalized: true } })).map(
       (v: { vesselNameNormalized: string }) => v.vesselNameNormalized,
     ),
   );

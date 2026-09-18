@@ -563,3 +563,15 @@ The underlying principle, stated plainly: **being actively, visibly present on a
 The previous fix (all three lists' create/re-add paths now clear the Departed marker automatically) only prevents this going forward — it doesn't touch markers that were already stale in the database at the moment that fix landed. Added a proper one-time cleanup for those: **Settings → "Reconcile 'Departed' Badges"**, matching the existing Backfill/Cleanup maintenance tools already there.
 
 Checks every current Departed marker against ENOA/D List, US Calling, and VECS List's active vessels — if the vessel is genuinely present/active on any of them, the marker is stale and gets cleared. Reports exactly which vessels were cleared and where they were found, so it's clear what changed rather than a silent bulk fix.
+
+## Fixed: "Not in VECS" highlight could be silently suppressed by an archived match
+
+Found via a specific case: "Celsius Goa" wasn't showing the yellow "not in VECS" highlight on US Calling, even though it wasn't findable on VECS List's Active tab. The `inVecs` check was matching against vessels of *any* status, including archived ones — so if a vessel exists in VECS only as an archived record, it was being treated as "present," which isn't actually useful since an archived vessel isn't being tracked there either.
+
+**Fixed** to only count ACTIVE VECS vessels as "in VECS." This is my best diagnosis based on how the code was written — I can't fully confirm it was the exact cause for this specific vessel without live database access, so worth checking the Archived tab on VECS List for "Celsius Goa" to confirm, but this is a genuine improvement either way: an archived-only match should never suppress the highlight, since the vessel isn't actually being actively tracked.
+
+## One-time backfill tool for text casing on existing data
+
+Same class of gap as the Departed markers: the auto-title-case feature only applies at save time, so anything already in the database (like "KINYRAS", imported before that feature existed) stays exactly as typed until someone edits it. Added **Settings → "Normalize Text Casing"** — a one-time sweep that re-applies the exact same title-case formatting to every existing free-text field across all three lists (Vessel Name, Owner, Operator, Built Location, Port, Flag, Vessel Type, Bridge Letter, Tech, Certificate Status), leaving dates/dropdowns/IDs/Remark untouched, same field selection as the live feature.
+
+The transform itself is ported to a real backend TypeScript utility (`toTitleCase.ts`) kept logically identical to the frontend version, verified with a matching test suite (6 tests, including the exact "KINYRAS" case) — not just assumed to match. Confirmed safe to re-case display names without touching name-based matching: `normalizeVesselName` already uppercases everything for matching purposes, so this backfill can't affect any cross-list vessel matching.

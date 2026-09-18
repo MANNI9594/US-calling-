@@ -10,6 +10,7 @@ import { storage } from '../services/storage';
 import { previewMasterImport, commitMasterImport, backfillMissingPermanentFields } from '../services/import/masterImportService';
 import { cleanupStaleDateQualityFlags } from '../services/dataQuality/dataQualityService';
 import { reconcileDepartedMarkers } from '../services/departed/departedVesselService';
+import { normalizeExistingTextCasing } from '../services/textNormalization/textNormalizationService';
 import { asyncHandler } from '../middleware/asyncHandler';
 
 export const importRouter = Router();
@@ -131,6 +132,19 @@ importRouter.post('/cleanup-stale-flags', asyncHandler(async (_req, res) => {
  */
 importRouter.post('/reconcile-departed-markers', asyncHandler(async (_req, res) => {
   const summary = await reconcileDepartedMarkers();
+  res.json({ summary });
+  broadcast('vessels-changed');
+  broadcast('us-calling-changed');
+  broadcast('us-calling-tracker-changed');
+}));
+
+/**
+ * One-time backfill: re-applies the same title-case formatting used live
+ * on every save to every existing free-text field across all three lists
+ * — see textNormalizationService.ts for the full field list and reasoning.
+ */
+importRouter.post('/normalize-text-casing', asyncHandler(async (_req, res) => {
+  const summary = await normalizeExistingTextCasing();
   res.json({ summary });
   broadcast('vessels-changed');
   broadcast('us-calling-changed');

@@ -86,6 +86,18 @@
     </div>
 
     <div class="card">
+      <h3>Normalize Text Casing</h3>
+      <p class="hint">
+        Vessel names, owners, ports, and similar text fields now auto-format to Title Case
+        (e.g. "KINYRAS" → "Kinyras") whenever they're saved — but that only applies going forward.
+        This one-time sweep re-applies the same formatting to everything already in the database,
+        across VECS List, ENOA/D List, and US Calling.
+      </p>
+      <button id="normalizeCasingBtn" class="btn btn-primary">Run Normalization</button>
+      <span id="normalizeCasingStatus" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-600);"></span>
+    </div>
+
+    <div class="card">
       <h3>Master Import History</h3>
       <div id="history">Loading…</div>
     </div>
@@ -148,6 +160,33 @@
           const names = s.cleared.map((c) => `${c.vesselName} (found on: ${c.foundOn.join(', ')})`).join('; ');
           status.textContent = `Checked ${s.totalMarkersChecked} marker(s), cleared ${s.cleared.length}: ${names}`;
         }
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('normalizeCasingBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('normalizeCasingBtn');
+      const status = document.getElementById('normalizeCasingStatus');
+      btn.disabled = true;
+      status.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/import/normalize-text-casing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.error || 'Normalization failed.';
+          return;
+        }
+        const s = data.summary;
+        status.textContent = `Checked ${s.rowsChecked} row(s) across all three lists, updated ${s.rowsUpdated}, normalized ${s.fieldsNormalized} field(s) total.`;
       } catch {
         status.textContent = 'Could not reach the server.';
       } finally {

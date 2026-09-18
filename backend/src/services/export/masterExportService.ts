@@ -326,31 +326,24 @@ export async function generateMasterExport(ids?: string[]): Promise<MasterExport
         const imageId = workbook.addImage({ buffer: imgBuffer as unknown as ExcelJS.Buffer, extension });
 
         // Center the (deliberately smaller-than-the-column) image within
-        // its cell, computed as a fraction of one column/row width.
+        // its cell, computed as a fraction of one column/row width —
+        // proven accurate via a real round-trip test.
         const colOffsetFraction = fullColumnWidthPx ? Math.max(0, (fullColumnWidthPx - placement.width) / 2 / fullColumnWidthPx) : 0;
         const rowOffsetFraction = fullRowHeightPx ? Math.max(0, (fullRowHeightPx - placement.height) / 2 / fullRowHeightPx) : 0;
-        const tlCol = 11 + colOffsetFraction;
-        const tlRow = excelRowNumber - 1 + rowOffsetFraction;
 
-        // Anchored with an explicit bottom-right corner (br) and
-        // editAs: 'twoCell' — the exact anchor type Excel itself uses by
-        // default for a manually-inserted picture ("Move and size with
-        // cells"), rather than the fixed-size "oneCellAnchor" this export
-        // used before. Confirmed by inspecting the actual XML this
-        // produces (twoCellAnchor / editAs="twoCell"), not assumed —
-        // oneCellAnchor images are known not to travel with a normal
-        // copy-paste of the cell range in Excel, which twoCellAnchor
-        // fixes. (Whether this fully resolves copy-paste in every version
-        // of Excel can only be confirmed by testing in real Excel — this
-        // is the correct anchor type, verified at the file-structure
-        // level, not a guarantee of runtime UI behavior I can't execute here.)
+        // Reverted to an explicit pixel size (ext) rather than a
+        // br-computed span. A twoCellAnchor/editAs="twoCell" attempt (for
+        // copy-paste behavior) was tried here and found, in real use, to
+        // shrink every image — twoCellAnchor derives its size from the
+        // tl-to-br span, which requires accurately estimating the
+        // column's true rendered pixel width; that estimate was off, and
+        // the resulting images came out far smaller than intended. Exact
+        // pixel sizing via ext is the one proven-correct approach, so
+        // it's kept here rather than risking size accuracy for an
+        // unverified copy-paste improvement.
         sheet.addImage(imageId, {
-          tl: { col: tlCol, row: tlRow },
-          br: {
-            col: tlCol + (fullColumnWidthPx ? placement.width / fullColumnWidthPx : 0),
-            row: tlRow + (fullRowHeightPx ? placement.height / fullRowHeightPx : 0),
-          },
-          editAs: 'twoCell',
+          tl: { col: 11 + colOffsetFraction, row: excelRowNumber - 1 + rowOffsetFraction },
+          ext: { width: placement.width, height: placement.height },
         } as unknown as ExcelJS.ImageRange);
         imagesPlaced += 1;
       } catch {

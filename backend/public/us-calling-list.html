@@ -6,6 +6,7 @@
 <title>US Calling Master Manager — ENOA/D List</title>
 <link rel="stylesheet" href="/styles.css" />
 <script src="/date-format.js"></script>
+<script src="/text-format.js"></script>
 <style>
   .controls-row { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
   .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
@@ -552,7 +553,8 @@
       let saved = false;
       const save = async () => {
         if (saved) return;
-        const newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        let newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        if (!isDateField && !FIELD_OPTIONS[field]) newValue = toTitleCase(newValue);
         saved = true;
 
         if (newValue === currentValue) {
@@ -649,11 +651,11 @@
     document.getElementById('addVesselForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = {
-        vesselName: document.getElementById('newVesselName').value,
+        vesselName: toTitleCase(document.getElementById('newVesselName').value),
         voyageType: document.getElementById('newVoyageType').value || undefined,
         transactionType: document.getElementById('newTransactionType').value || undefined,
         sendTo: document.getElementById('newSendTo').value || undefined,
-        arrivalPort: document.getElementById('newPort').value || undefined,
+        arrivalPort: toTitleCase(document.getElementById('newPort').value) || undefined,
         etaRaw: isoToDdMmYyyy(document.getElementById('newEta').value),
         etdRaw: isoToDdMmYyyy(document.getElementById('newEtd').value),
       };

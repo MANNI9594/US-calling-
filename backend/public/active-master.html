@@ -6,6 +6,7 @@
 <title>US Calling Master Manager — VECS List</title>
 <link rel="stylesheet" href="/styles.css" />
 <script src="/date-format.js"></script>
+<script src="/text-format.js"></script>
 <style>
   .controls-row { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
   .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
@@ -716,9 +717,11 @@
 
       let saved = false;
       const isDateField = field === 'etaRaw' || field === 'etdRaw';
+      const isDropdownField = field === 'serviceFeesApplicable';
       const save = async () => {
         if (saved) return;
-        const newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        let newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        if (!isDateField && !isDropdownField) newValue = toTitleCase(newValue);
         saved = true;
 
         if (newValue === currentValue) {
@@ -959,16 +962,16 @@
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
-              vesselName: document.getElementById('evVesselName').value,
+              vesselName: toTitleCase(document.getElementById('evVesselName').value),
               imoNumber: document.getElementById('evImoNumber').value || undefined,
-              flag: document.getElementById('evFlag').value || undefined,
-              vesselType: document.getElementById('evVesselType').value || undefined,
+              flag: toTitleCase(document.getElementById('evFlag').value) || undefined,
+              vesselType: toTitleCase(document.getElementById('evVesselType').value) || undefined,
               summerDeadweightOrTeu: document.getElementById('evSummerDeadweightOrTeu').value || undefined,
-              registeredOwnerPerCor: document.getElementById('evRegisteredOwnerPerCor').value || undefined,
-              registeredOwnerPerCsr: document.getElementById('evRegisteredOwnerPerCsr').value || undefined,
-              operatorNameInCofr: document.getElementById('evOperatorNameInCofr').value || undefined,
-              bridgeLetter: document.getElementById('evBridgeLetter').value || undefined,
-              builtLocation: document.getElementById('evBuiltLocation').value || undefined,
+              registeredOwnerPerCor: toTitleCase(document.getElementById('evRegisteredOwnerPerCor').value) || undefined,
+              registeredOwnerPerCsr: toTitleCase(document.getElementById('evRegisteredOwnerPerCsr').value) || undefined,
+              operatorNameInCofr: toTitleCase(document.getElementById('evOperatorNameInCofr').value) || undefined,
+              bridgeLetter: toTitleCase(document.getElementById('evBridgeLetter').value) || undefined,
+              builtLocation: toTitleCase(document.getElementById('evBuiltLocation').value) || undefined,
               serviceFeesApplicable: document.getElementById('evServiceFeesApplicable').value,
             }),
           });
@@ -984,7 +987,7 @@
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
-              arrivalPort: document.getElementById('evArrivalPort').value || undefined,
+              arrivalPort: toTitleCase(document.getElementById('evArrivalPort').value) || undefined,
               etaRaw: isoToDdMmYyyy(document.getElementById('evEta').value) || undefined,
               etdRaw: isoToDdMmYyyy(document.getElementById('evEtd').value) || undefined,
               ballastOrLoaded: document.getElementById('evBallastOrLoaded').value || undefined,

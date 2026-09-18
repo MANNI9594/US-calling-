@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>US Calling Master Manager — Add Vessel</title>
 <link rel="stylesheet" href="/styles.css" />
+<script src="/text-format.js"></script>
 <style>
   .dropzone-mini {
     border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 14px;
@@ -398,18 +399,18 @@
       resultBox.className = 'alert';
 
       const body = {
-        vesselName: document.getElementById('vesselName').value,
+        vesselName: toTitleCase(document.getElementById('vesselName').value),
         imoNumber: document.getElementById('imoNumber').value || undefined,
-        flag: document.getElementById('flag').value || undefined,
-        vesselType: document.getElementById('vesselType').value || undefined,
+        flag: toTitleCase(document.getElementById('flag').value) || undefined,
+        vesselType: toTitleCase(document.getElementById('vesselType').value) || undefined,
         summerDeadweightOrTeu: document.getElementById('summerDeadweightOrTeu').value || undefined,
-        registeredOwnerPerCor: document.getElementById('registeredOwnerPerCor').value || undefined,
-        registeredOwnerPerCsr: document.getElementById('registeredOwnerPerCsr').value || undefined,
-        operatorNameInCofr: document.getElementById('operatorNameInCofr').value || undefined,
-        bridgeLetter: document.getElementById('bridgeLetter').value || undefined,
-        builtLocation: document.getElementById('builtLocation').value || undefined,
+        registeredOwnerPerCor: toTitleCase(document.getElementById('registeredOwnerPerCor').value) || undefined,
+        registeredOwnerPerCsr: toTitleCase(document.getElementById('registeredOwnerPerCsr').value) || undefined,
+        operatorNameInCofr: toTitleCase(document.getElementById('operatorNameInCofr').value) || undefined,
+        bridgeLetter: toTitleCase(document.getElementById('bridgeLetter').value) || undefined,
+        builtLocation: toTitleCase(document.getElementById('builtLocation').value) || undefined,
         serviceFeesApplicable: document.getElementById('serviceFeesApplicable').value,
-        arrivalPort: document.getElementById('arrivalPort').value || undefined,
+        arrivalPort: toTitleCase(document.getElementById('arrivalPort').value) || undefined,
         etaRaw: isoToDdMmYyyy(document.getElementById('etaDate').value) || undefined,
         etdRaw: isoToDdMmYyyy(document.getElementById('etdDate').value) || undefined,
         voyageType: pendingOp.voyageType || undefined,

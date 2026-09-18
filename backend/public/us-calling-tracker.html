@@ -6,6 +6,7 @@
 <title>US Calling Master Manager — US Calling</title>
 <link rel="stylesheet" href="/styles.css" />
 <script src="/date-format.js"></script>
+<script src="/text-format.js"></script>
 <style>
   .controls-row { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
   .selection-count { font-size: 0.82rem; color: var(--text-600); font-weight: 600; }
@@ -610,7 +611,8 @@
       let saved = false;
       const save = async () => {
         if (saved) return;
-        const newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        let newValue = isDateField ? isoToDdMmYyyy(inputEl.value) : inputEl.value;
+        if (kind === 'text' || kind === 'suggest-port' || kind === 'suggest-flag') newValue = toTitleCase(newValue);
         saved = true;
 
         if (newValue === currentValue) {
@@ -756,13 +758,13 @@
       e.preventDefault();
       const resultBox = document.getElementById('avResult');
       const body = {
-        vesselName: document.getElementById('avVesselName').value,
-        tech: document.getElementById('avTech').value || undefined,
-        flag: document.getElementById('avFlag').value || undefined,
+        vesselName: toTitleCase(document.getElementById('avVesselName').value),
+        tech: toTitleCase(document.getElementById('avTech').value) || undefined,
+        flag: toTitleCase(document.getElementById('avFlag').value) || undefined,
         etaRaw: isoToDdMmYyyy(document.getElementById('avEta').value) || undefined,
         etdRaw: isoToDdMmYyyy(document.getElementById('avEtd').value) || undefined,
-        arrivalPort: document.getElementById('avArrivalPort').value || undefined,
-        certificateStatus: document.getElementById('avCertificateStatus').value || undefined,
+        arrivalPort: toTitleCase(document.getElementById('avArrivalPort').value) || undefined,
+        certificateStatus: toTitleCase(document.getElementById('avCertificateStatus').value) || undefined,
         enoaSentForReview: document.getElementById('avEnoaSentForReview').value || undefined,
         qualship21ExpiryRaw: document.getElementById('avQualship21ExpiryRaw').value || undefined,
         usCallingMessageSentRaw: document.getElementById('avUsCallingMessageSentRaw').value || undefined,

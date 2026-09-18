@@ -746,6 +746,9 @@
     document.getElementById('addVesselCancelBtn').addEventListener('click', () => {
       document.getElementById('addVesselOverlay').classList.remove('show');
     });
+    document.getElementById('addVesselCloseBtn').addEventListener('click', () => {
+      document.getElementById('addVesselOverlay').classList.remove('show');
+    });
     document.getElementById('addVesselOverlay').addEventListener('click', (e) => {
       if (e.target.id === 'addVesselOverlay') document.getElementById('addVesselOverlay').classList.remove('show');
     });

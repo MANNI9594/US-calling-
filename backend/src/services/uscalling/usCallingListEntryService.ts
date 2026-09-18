@@ -52,6 +52,14 @@ export async function createEntry(input: EntryInput) {
       etdParsed,
     },
   });
+  // A vessel actively present on ENOA/D List is, by definition, not
+  // departed — even if it carries a stale Departed marker from earlier
+  // (e.g. its ENOA was sent by mistake, removed via "Departed", then
+  // re-added once the mistake was caught). Being back on this list is
+  // unambiguous evidence it's active again, so clear the marker here too,
+  // not just on the apply/import path — a plain "Add Vessel" create was a
+  // real gap this didn't cover before.
+  await clearVesselDeparted(input.vesselName);
   return entry;
 }
 
@@ -369,7 +377,8 @@ export async function markEntryDeparted(entryId: string): Promise<MarkDepartedRe
  * departure should undo the cross-list badge too.
  */
 export async function undoEntryDeparted(snapshot: MarkDepartedResult['snapshot']) {
-  const entry = await createEntry(snapshot);
-  await clearVesselDeparted(snapshot.vesselName);
-  return entry;
+  // createEntry already clears the Departed marker as of its own fix
+  // above — kept as a single call here rather than a redundant second one,
+  // since re-creating the row IS what un-departs it.
+  return createEntry(snapshot);
 }

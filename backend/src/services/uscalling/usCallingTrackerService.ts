@@ -92,6 +92,10 @@ export async function createTrackerEntry(input: TrackerEntryInput) {
       remark: input.remark ?? null,
     },
   });
+  // Same principle as ENOA/D List's createEntry: actively adding a vessel
+  // here means it's not departed, even if it carries a stale marker from
+  // before (mistaken ENOA, removed, re-added once caught).
+  await clearVesselDeparted(input.vesselName);
   return entry;
 }
 
@@ -126,6 +130,7 @@ export async function importTrackerEntriesFromFile(fileBuffer: Buffer): Promise<
   const parsed = await readUsCallingTracker(fileBuffer);
   let created = 0;
   let updated = 0;
+  const processedVesselNames: string[] = [];
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     for (const row of parsed.rows) {
@@ -162,8 +167,17 @@ export async function importTrackerEntriesFromFile(fileBuffer: Buffer): Promise<
         await tx.usCallingTrackerEntry.create({ data: { ...data, vesselNameNormalized: normalized } });
         created += 1;
       }
+      processedVesselNames.push(row.vesselName);
     }
   });
+
+  // Every vessel in this file is, by definition, actively present on US
+  // Calling after this import — clear any stale Departed marker for each,
+  // same principle as createTrackerEntry above. Covers the "re-imported a
+  // fresh file after a mistaken ENOA removal" case, not just manual re-adds.
+  for (const vesselName of processedVesselNames) {
+    await clearVesselDeparted(vesselName);
+  }
 
   return { created, updated, totalRows: parsed.rows.length, warnings: parsed.warnings };
 }
@@ -257,7 +271,7 @@ export async function markTrackerEntryDeparted(id: string): Promise<TrackerDepar
  * its snapshot and clears the shared Departed marker.
  */
 export async function undoTrackerEntryDeparted(snapshot: TrackerEntryInput) {
-  const entry = await createTrackerEntry(snapshot);
-  await clearVesselDeparted(snapshot.vesselName);
-  return entry;
+  // createTrackerEntry already clears the Departed marker — kept as one
+  // call rather than a redundant second one.
+  return createTrackerEntry(snapshot);
 }

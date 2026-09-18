@@ -295,8 +295,16 @@ vesselsRouter.post('/', asyncHandler(async (req, res) => {
     summary: `${result.vessel.vesselName} manually added to the vessel database`,
   });
 
+  // Covers the case where this exact vessel name was marked Departed via
+  // ENOA/D List or US Calling *before* it ever had a VECS record — without
+  // this, a brand-new vessel could be born already showing a stale
+  // "Departed" badge from a marker that predates its own existence here.
+  await clearVesselDeparted(result.vessel.vesselName);
+
   res.status(201).json({ vessel: result.vessel, dataQualityIssuesRaised: result.dataQualityIssuesRaised });
   broadcast('vessels-changed');
+  broadcast('us-calling-changed');
+  broadcast('us-calling-tracker-changed');
 }));
 
 const bulkVesselIdsSchema = z.object({ vesselIds: z.array(z.string().uuid()).min(1) });

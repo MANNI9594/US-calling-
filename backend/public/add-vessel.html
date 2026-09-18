@@ -252,6 +252,9 @@
         Port: ${pendingOp.arrivalPort || '—'} | ETA: ${pendingOp.etaRaw || '—'} | ETD: ${pendingOp.etdRaw || '—'}`;
     }
     if (pendingOp.arrivalPort) document.getElementById('arrivalPort').value = pendingOp.arrivalPort;
+    function esc(v) {
+      return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;');
+    }
     function ddMmYyyyToIso(raw) {
       if (!raw) return '';
       const match = raw.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
@@ -288,26 +291,53 @@
         const statusBadge = v.status === 'ARCHIVED'
           ? '<span class="badge badge-amber">Archived</span>'
           : '<span class="badge badge-green">Active</span>';
-        const action = v.status === 'ARCHIVED'
-          ? `<button class="btn btn-accent restore-btn" data-id="${v.id}" data-name="${v.vesselName}">Restore This Vessel</button>`
-          : `<a class="btn btn-secondary" href="/active-master.html">Already Active — View</a>`;
+        if (v.status === 'ARCHIVED') {
+          return `
+            <div class="search-result" style="flex-direction:column; align-items:stretch;">
+              <div class="info"><span class="name">${v.vesselName}</span> ${statusBadge}${v.imoNumber ? ' — IMO ' + v.imoNumber : ''}</div>
+              <p style="margin: 6px 0 4px; font-size:0.82rem; color:var(--text-600);">Enter this vessel's <strong>current</strong> Port, ETA, and ETD before restoring — its old operational data from before it was archived is not carried over automatically.</p>
+              <div class="form-grid" style="margin-top:4px;">
+                <div class="field-full">
+                  <label>Port</label>
+                  <input type="text" class="restore-port" list="suggestions-arrivalPort" value="${esc(pendingOp.arrivalPort || '')}" />
+                </div>
+                <div>
+                  <label>ETA</label>
+                  <input type="date" class="restore-eta" value="${ddMmYyyyToIso(pendingOp.etaRaw || '')}" />
+                </div>
+                <div>
+                  <label>ETD</label>
+                  <input type="date" class="restore-etd" value="${ddMmYyyyToIso(pendingOp.etdRaw || '')}" />
+                </div>
+              </div>
+              <button class="btn btn-accent restore-btn" data-id="${v.id}" data-name="${esc(v.vesselName)}" style="margin-top:10px; align-self:flex-start;">Restore This Vessel</button>
+            </div>
+          `;
+        }
         return `
           <div class="search-result">
             <div class="info"><span class="name">${v.vesselName}</span> ${statusBadge}${v.imoNumber ? ' — IMO ' + v.imoNumber : ''}</div>
-            ${action}
+            <a class="btn btn-secondary" href="/active-master.html">Already Active — View</a>
           </div>
         `;
       }).join('') + `<p style="margin-top:10px;"><a href="#" id="createNewLinkAfterResults">None of these — create a new vessel profile instead →</a></p>`;
 
       resultsDiv.querySelectorAll('.restore-btn').forEach((btn) => {
-        btn.addEventListener('click', () => restoreVessel(btn.dataset.id, btn.dataset.name));
+        btn.addEventListener('click', () => {
+          const container = btn.closest('.search-result');
+          const arrivalPort = toTitleCase(container.querySelector('.restore-port').value);
+          const etaRaw = isoToDdMmYyyy(container.querySelector('.restore-eta').value);
+          const etdRaw = isoToDdMmYyyy(container.querySelector('.restore-etd').value);
+          restoreVessel(btn.dataset.id, btn.dataset.name, { arrivalPort, etaRaw, etdRaw });
+        });
       });
       const createLink = document.getElementById('createNewLinkAfterResults');
       if (createLink) createLink.addEventListener('click', (e) => { e.preventDefault(); showManualForm(); });
     }
 
-    async function restoreVessel(vesselId, vesselName) {
-      if (!confirm(`Restore ${vesselName} to the VECS List${pendingOp.etaRaw ? ' with the pending ETA/ETD/Port shown above' : ''}?`)) return;
+    async function restoreVessel(vesselId, vesselName, currentOp) {
+      const hasFreshData = currentOp && (currentOp.arrivalPort || currentOp.etaRaw || currentOp.etdRaw);
+      if (!confirm(`Restore ${vesselName} to the VECS List${hasFreshData ? ' with the Port/ETA/ETD you just entered' : ' — no current Port/ETA/ETD entered, its old data before archiving will be left as-is'}?`)) return;
 
       const resultBox = document.getElementById('restoreResult');
       resultBox.className = 'alert';
@@ -318,9 +348,9 @@
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            arrivalPort: pendingOp.arrivalPort || undefined,
-            etaRaw: pendingOp.etaRaw || undefined,
-            etdRaw: pendingOp.etdRaw || undefined,
+            arrivalPort: (currentOp && currentOp.arrivalPort) || undefined,
+            etaRaw: (currentOp && currentOp.etaRaw) || undefined,
+            etdRaw: (currentOp && currentOp.etdRaw) || undefined,
             voyageType: pendingOp.voyageType || undefined,
             transactionType: pendingOp.transactionType || undefined,
             sendTo: pendingOp.sendTo || undefined,

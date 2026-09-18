@@ -9,6 +9,7 @@ import { env } from '../config/env';
 import { storage } from '../services/storage';
 import { previewMasterImport, commitMasterImport, backfillMissingPermanentFields } from '../services/import/masterImportService';
 import { cleanupStaleDateQualityFlags } from '../services/dataQuality/dataQualityService';
+import { reconcileDepartedMarkers } from '../services/departed/departedVesselService';
 import { asyncHandler } from '../middleware/asyncHandler';
 
 export const importRouter = Router();
@@ -120,4 +121,18 @@ importRouter.post('/cleanup-stale-flags', asyncHandler(async (_req, res) => {
   const summary = await cleanupStaleDateQualityFlags();
   res.json({ summary });
   broadcast('vessels-changed');
+}));
+
+/**
+ * One-time cleanup for Departed markers that went stale before the fix
+ * making every create/re-add path clear them automatically — see
+ * departedVesselService.ts for the full explanation of what this
+ * reconciles and why.
+ */
+importRouter.post('/reconcile-departed-markers', asyncHandler(async (_req, res) => {
+  const summary = await reconcileDepartedMarkers();
+  res.json({ summary });
+  broadcast('vessels-changed');
+  broadcast('us-calling-changed');
+  broadcast('us-calling-tracker-changed');
 }));

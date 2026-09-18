@@ -557,3 +557,9 @@ Real bug, found via a real scenario the user described: a vessel's ENOA gets sen
 **Fixed at every create/re-add path across all three lists**: ENOA/D List's `createEntry` (covers both "Add Vessel" and the Departed-undo path, which no longer needs its own redundant clear call), US Calling's `createTrackerEntry` and its separate file-import upsert logic, and VECS List's plain "Add Vessel" create endpoint — including the edge case where a vessel gets marked Departed via ENOA/D or US Calling *before* it ever has a VECS record, then later gets created fresh on VECS (which would otherwise be born already showing a stale badge from a marker older than its own existence).
 
 The underlying principle, stated plainly: **being actively, visibly present on any list is unambiguous evidence a vessel is not departed** — any code path that creates or re-creates a row for a vessel should clear that vessel's Departed marker, not just the explicit "apply fresh data" flows.
+
+## One-time cleanup tool for existing stale Departed badges
+
+The previous fix (all three lists' create/re-add paths now clear the Departed marker automatically) only prevents this going forward — it doesn't touch markers that were already stale in the database at the moment that fix landed. Added a proper one-time cleanup for those: **Settings → "Reconcile 'Departed' Badges"**, matching the existing Backfill/Cleanup maintenance tools already there.
+
+Checks every current Departed marker against ENOA/D List, US Calling, and VECS List's active vessels — if the vessel is genuinely present/active on any of them, the marker is stale and gets cleared. Reports exactly which vessels were cleared and where they were found, so it's clear what changed rather than a silent bulk fix.

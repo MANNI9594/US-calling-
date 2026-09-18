@@ -28,6 +28,7 @@
   td.editable { cursor: pointer; }
   td.editable:hover { background: var(--blue-50); outline: 1px dashed var(--blue-100); }
   td.editing input, td.editing select { width: 100%; min-width: 200px; font-size: 0.9rem; padding: 6px 8px; border: 2px solid var(--blue-600); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); background: #fff; position: relative; z-index: 20; }
+  td.editing input[type="date"] { min-width: 150px; width: auto; }
 
   .ev-thumb { width: 70px; height: 40px; object-fit: contain; background: var(--bg-subtle); border-radius: 4px; cursor: pointer; display: block; }
   .ev-thumb-empty { width: 70px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-400); font-size: 0.7rem; background: var(--bg-subtle); border-radius: 4px; }
@@ -464,6 +465,15 @@
     function hasPastEtd(v) {
       return (v.dataQualityIssues || []).some((i) => i.issueType === 'PAST_ETD');
     }
+    // The live, accurate check — used everywhere "Past ETD" needs to be
+    // shown or filtered on, instead of hasPastEtd() above (which only
+    // reflects a stored data-quality-issue record that can go stale or
+    // simply never get raised, causing the badge and the actual red ETD
+    // text to silently disagree — a real bug found and fixed this way).
+    function isEtdPastDue(v) {
+      const t = getEtdTime(v);
+      return t !== Infinity && t < Date.now();
+    }
     function openDqCount(v) {
       return (v.dataQualityIssues || []).length;
     }
@@ -507,7 +517,7 @@
       let list = vessels.slice();
 
       if (activeFilter === 'PAST_ETD') {
-        list = list.filter(hasPastEtd);
+        list = list.filter(isEtdPastDue);
       } else if (activeFilter === 'DEPARTED') {
         list = list.filter((v) => Boolean(v.isDeparted));
       } else if (activeFilter === 'NO_EVIDENCE') {
@@ -587,9 +597,8 @@
       const rows = displayVessels.map((v, idx) => {
         const cr = (v.callingRecords || [])[0] || {};
         const checked = selected.has(v.id) ? 'checked' : '';
-        const past = hasPastEtd(v);
-        const etdTime = getEtdTime(v);
-        const etdIsPastDue = etdTime !== Infinity && etdTime < now;
+        const etdIsPastDue = isEtdPastDue(v);
+        const past = etdIsPastDue; // single source of truth — badge, row highlight, and red ETD text must always agree, computed live rather than from a potentially-stale stored flag
         const bestEvidence = (v.evidence || []).find((e) => e.reviewStatus === 'CONFIRMED') || (v.evidence || [])[0];
         const evidenceCell = bestEvidence
           ? `<img class="ev-thumb" src="/api/evidence/${bestEvidence.id}/image" data-full="/api/evidence/${bestEvidence.id}/image" loading="lazy" />`

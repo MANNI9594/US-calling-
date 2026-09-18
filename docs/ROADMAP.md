@@ -575,3 +575,11 @@ Found via a specific case: "Celsius Goa" wasn't showing the yellow "not in VECS"
 Same class of gap as the Departed markers: the auto-title-case feature only applies at save time, so anything already in the database (like "KINYRAS", imported before that feature existed) stays exactly as typed until someone edits it. Added **Settings → "Normalize Text Casing"** — a one-time sweep that re-applies the exact same title-case formatting to every existing free-text field across all three lists (Vessel Name, Owner, Operator, Built Location, Port, Flag, Vessel Type, Bridge Letter, Tech, Certificate Status), leaving dates/dropdowns/IDs/Remark untouched, same field selection as the live feature.
 
 The transform itself is ported to a real backend TypeScript utility (`toTitleCase.ts`) kept logically identical to the frontend version, verified with a matching test suite (6 tests, including the exact "KINYRAS" case) — not just assumed to match. Confirmed safe to re-case display names without touching name-based matching: `normalizeVesselName` already uppercases everything for matching purposes, so this backfill can't affect any cross-list vessel matching.
+
+## Fixed: "Past ETD" badge disagreed with the red ETD text
+
+Real bug found via a screenshot: several vessels showed their ETD date in red (correctly indicating it's overdue) but had no "Past ETD" badge next to their name, even though both are supposed to mean the same thing.
+
+**Root cause**: two completely different checks were being used for what should be one concept. The red ETD text was computed live — comparing the vessel's actual parsed ETD against the current date on every render. The badge, meanwhile, checked for a *stored* `PAST_ETD` data-quality-issue record in the database — which only gets raised at specific moments (import, edit) and can silently go stale or simply never get created, depending on how a vessel's data arrived.
+
+**Fixed** by making both use the exact same live calculation (`isEtdPastDue`), applied consistently to the badge, the row highlighting, the red ETD text, and the "Past ETD" filter chip — one single source of truth instead of two that could disagree.
